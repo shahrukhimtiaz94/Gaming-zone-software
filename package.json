@@ -1,0 +1,18 @@
+{
+  "name": "gaming-zone",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "build": "node --check server.js && node --check storage.js && node --check public/app.js"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "pg": "^8.23.1",
+    "pg-connection-string": "^2.14.1"
+  }
+}

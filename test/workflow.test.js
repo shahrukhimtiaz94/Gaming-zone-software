@@ -1,0 +1,90 @@
+import {test} from 'node:test';
+import {DatabaseSync} from 'node:sqlite';
+import pg from 'pg';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+test('authenticated booking, authorization, billing and durable history',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'zone-test-')),port=18000+Math.floor(Math.random()*10000);
+ const testEnv={...process.env};delete testEnv.DATABASE_URL;delete testEnv.VERCEL;
+ const database=process.env.NEXUS_TEST_DATABASE_URL;
+ if(database){const u=new URL(database);assert.equal(u.hostname,'127.0.0.1');assert.equal(u.pathname,'/nexus_zone_test');testEnv.DATABASE_URL=database;const c=new pg.Client({connectionString:database});await c.connect();await c.query('DROP SCHEMA IF EXISTS nexus_zone CASCADE');await c.end();}
+ let proc;
+ const start=()=>new Promise((resolve,reject)=>{proc=spawn(process.execPath,['server.js'],{env:{...testEnv,DATA_DIR:dir,PORT:String(port),SETUP_KEY:'test-only-key'}});proc.stdout.once('data',resolve);proc.once('error',reject);proc.once('exit',code=>reject(Error('Server exited '+code)));});
+ const call=async(path,body,cookie,bearer)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${process.env.NEXUS_TEST_REWRITE?"index?route="+encodeURIComponent(path):path}`,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(bearer?{Authorization:'Bearer '+bearer}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
+ try{await start();assert.equal((await call('state')).status,401);assert.equal((await call('setup',{key:'wrong',name:'owner',password:'long-password-123'})).status,403);
+ assert.equal((await call('setup',{key:'test-only-key',name:'owner',password:'long-password-123'})).status,200);
+ const owner=(await call('login',{name:'owner',password:'long-password-123'})).cookie;assert.ok(owner);
+ assert.equal((await call('staff',{name:'operator',password:'staff-password-123'},owner)).status,200);
+ const staff=(await call('login',{name:'operator',password:'staff-password-123'})).cookie;
+ assert.equal((await call('staff',{name:'intruder',password:'long-password-123'},staff)).status,403);
+ assert.equal((await call('device-key',{device:1},staff)).status,403);
+ assert.equal((await call('device-key',{device:11},owner)).status,400);
+ assert.equal((await call('agent/poll',{state:'blocked'})).status,401);
+ const key=(await call('device-key',{device:1},owner)).data.key;
+ assert.match(key,/^[a-f0-9]{64}$/);
+ let poll=(await call('agent/poll',{state:'blocked',version:'test'},null,key));
+ assert.equal(poll.status,200);assert.equal(poll.data.device,1);assert.equal(poll.data.session,null);
+ assert.equal((await call('state',null,owner)).data.devices[0].agent.online,true);
+ assert.equal((await call('request',{device:1,customer:'Ahmed',minutes:60},staff)).status,200);
+ let s=(await call('state',null,owner)).data;assert.equal(s.devices[0].session,null);assert.equal(s.requests.length,1);assert.equal((await call('agent/poll',{state:'blocked'},null,key)).data.session,null);
+ assert.equal((await call('approve',{id:s.requests[0].id},staff)).status,200);
+ s=(await call('state',null,owner)).data;assert.equal(s.devices[0].session.customer,'Ahmed');assert.equal(s.sessions.length,1);assert.equal(s.sessions[0].rate,300);
+ poll=await call('agent/poll',{state:'enabled'},null,key);assert.equal(poll.data.session.id,s.sessions[0].id);assert.ok(poll.data.session.remainingMs>3590000&&poll.data.session.remainingMs<=3600000);
+ assert.ok(!JSON.stringify(s).includes(key));
+ const sessionId=s.sessions[0].id,originalEnd=s.sessions[0].end;
+ assert.equal((await call('extend',{id:sessionId,minutes:60,expectedEnd:originalEnd})).status,401);
+ assert.equal((await call('extend',{id:sessionId,minutes:60,expectedEnd:originalEnd},null,key)).status,401);
+ assert.equal((await call('extend',{id:sessionId,minutes:-5,expectedEnd:originalEnd},staff)).status,400);
+ assert.equal((await call('extend',{id:sessionId,minutes:60,expectedEnd:originalEnd},staff)).status,200);
+ assert.equal((await call('extend',{id:sessionId,minutes:60,expectedEnd:originalEnd},staff)).status,409);
+ poll=await call('agent/poll',{state:'enabled'},null,key);
+ assert.equal(poll.data.session.end,originalEnd+3600000);
+ assert.ok(poll.data.session.remainingMs>7190000);
+ assert.equal((await call('extend',{id:sessionId,minutes:720,expectedEnd:poll.data.session.end},staff)).status,400);
+ // Paid time must stay credited if staff approves additional time.
+ await call('pay',{id:sessionId},owner);
+ let paid=(await call('state',null,owner)).data.sessions[0];assert.equal(paid.paid_amount,600);
+ await call('extend',{id:sessionId,minutes:60,expectedEnd:paid.end},staff);
+ paid=(await call('state',null,owner)).data.sessions[0];assert.equal(paid.paid,0);assert.equal(paid.paid_amount,600);
+ assert.equal((paid.end-paid.start)/3600000*paid.rate-paid.paid_amount,300);
+ // Acknowledge that the device actually received the new end; saving alone is insufficient.
+ await call('agent/poll',{state:'enabled',sessionId,sessionEnd:paid.end},null,key);
+ assert.equal((await call('state',null,owner)).data.devices[0].agent.session_end,paid.end);
+
+ assert.equal((await call('staff',{name:'no',password:'some-password-123'},null,key)).status,401);
+ await call('request',{device:1,customer:'Ali',minutes:120},staff);s=(await call('state',null,owner)).data;
+ assert.equal((await call('approve',{id:s.requests[0].id},staff)).status,409);
+ assert.equal((await call('pay',{id:s.sessions[0].id},staff)).status,403);
+ assert.equal((await call('pay',{id:s.sessions[0].id},owner)).status,200);
+ assert.equal((await call('stop',{id:s.sessions[0].id},staff)).status,200);
+ assert.equal((await call('state',null,owner)).data.devices[0].session,null);
+ assert.equal((await call('agent/poll',{state:'blocked'},null,key)).data.session,null);
+ assert.equal((await call('extend',{id:s.sessions[0].id,minutes:60,expectedEnd:s.sessions[0].end},staff)).status,409);
+ // Expired continuation starts now, preserves old bill/payment and does not bill the locked gap.
+ await call('request',{device:2,customer:'Continuing player',minutes:5},staff);
+ let row=(await call('state',null,owner)).data.requests[0];await call('approve',{id:row.id},staff);
+ let expired=(await call('state',null,owner)).data.sessions.find(x=>x.device_id===2);
+ const end=Date.now()-60000;
+ if(database){const c=new pg.Client({connectionString:database});await c.connect();await c.query('UPDATE nexus_zone.sessions SET start=$1,"end"=$2 WHERE id=$3',[end-300000,end,expired.id]);await c.end();}
+ else{const edit=new DatabaseSync(join(dir,'zone.db'));edit.prepare('UPDATE sessions SET start=?,end=? WHERE id=?').run(end-300000,end,expired.id);edit.close();}
+ const continuation=await call('extend',{id:expired.id,minutes:60,expectedEnd:end},staff);
+ assert.equal(continuation.status,200);
+ let history=(await call('state',null,owner)).data.sessions;
+ const resumed=history.find(x=>x.id===continuation.data.id);
+ assert.equal(resumed.end-resumed.start,3600000);assert.ok(resumed.start>end);assert.equal(resumed.customer,'Continuing player');
+ assert.equal(history.find(x=>x.id===expired.id).end,end);
+ assert.equal((await call('extend',{id:expired.id,minutes:60,expectedEnd:end},staff)).status,409);
+ const nextKey=(await call('device-key',{device:1},owner)).data.key;
+ assert.equal((await call('agent/poll',{state:'enabled'},null,key)).status,401);
+ assert.equal((await call('agent/poll',{state:'blocked'},null,nextKey)).status,200);
+ await new Promise(resolve=>{proc.once('exit',resolve);proc.kill();});await start();
+ assert.equal((await call('agent/poll',{state:'blocked'},null,nextKey)).status,200);
+ assert.equal((await call('device-key',{device:1,revoke:true},owner)).status,200);
+ assert.equal((await call('agent/poll',{state:'enabled'},null,nextKey)).status,401);
+ s=(await call('state',null,owner)).data;assert.equal(s.sessions.find(x=>x.id===sessionId).paid,1);assert.ok(s.sessions.find(x=>x.id===sessionId).stopped);assert.ok(s.audit.length>=5);
+ assert.equal((await call('logout',{},owner)).status,200);assert.equal((await call('state',null,owner)).status,401);
+ }finally{if(proc&&!proc.killed)await new Promise(resolve=>{proc.once('exit',resolve);proc.kill();});rmSync(dir,{recursive:true,force:true});}
+});
