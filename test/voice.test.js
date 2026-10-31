@@ -57,3 +57,18 @@ test('save failure is reported without automatic retry or spoken success',async(
  try{await h.assistant.start();await h.say('PC five two hours');await h.say('Ahmed');await h.say('yes');assert.equal(attempts,1);assert.ok(!h.spoken.some(t=>t.includes('has been saved')));assert.equal(h.assistant.active,false);}
  finally{h.assistant.stop();}
 });
+
+test('cloud voice failure is explained once and falls back without changing booking permissions',async()=>{
+ const h=harness();h.assistant.voiceName=()=> 'cloud-urdu-female';let attempts=0;
+ h.assistant.synthesize=async()=>{attempts++;throw Error('Google Text-to-Speech API enable karein.');};
+ try{await h.assistant.start();await h.say('PC five two hours');assert.equal(attempts,1);assert.ok(h.messages.some(m=>m.text.includes('browser voice')));assert.equal(h.calls.length,0);assert.ok(h.spoken.length>=2);}
+ finally{h.assistant.stop();}
+});
+test('cloud audio completes before microphone opens and stop cancels playback',async()=>{
+ const h=harness();let audio;h.assistant.voiceName=()=> 'cloud-urdu-female';
+ h.assistant.synthesize=async()=>({audioContent:'VGVzdA==',mimeType:'audio/mpeg'});
+ h.assistant.AudioClass=class{constructor(){audio=this;}play(){assert.equal(h.assistant.recognition,null);return Promise.resolve();}pause(){this.paused=true;}};
+ try{const started=h.assistant.start();await flush();assert.ok(audio);assert.equal(h.assistant.recognition,null);audio.onended();await started;assert.ok(h.assistant.recognition);
+  const saying=h.say('PC five two hours');await flush();h.assistant.stop();await saying;assert.equal(audio.paused,true);assert.equal(h.assistant.active,false);assert.equal(h.assistant.recognition,null);
+ }finally{h.assistant.stop();}
+});

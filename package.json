@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "build": "node --check server.js && node --check storage.js && node --check firebase/storage.js && node --check firebase/admin.js && node --check firebase/client.js && node --check public/app.js && node --check public/voice.js && node --check public/voice-dialogue.js"
+    "build": "node --check server.js && node --check storage.js && node --check firebase/storage.js && node --check firebase/admin.js && node --check firebase/client.js && node --check public/app.js && node --check public/voice.js && node --check public/voice-dialogue.js && node --check firebase/speech.js"
   },
   "engines": {
     "node": "24.x"

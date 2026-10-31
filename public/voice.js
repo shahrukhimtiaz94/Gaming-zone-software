@@ -1,22 +1,49 @@
 import {VoiceBookingDialogue} from './voice-dialogue.js';
 
 export class VoiceAssistant{
- constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
-  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,language,voiceName,speech,Recognition,Utterance});this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
+ constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
+  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
  }
  abortRecognition(){if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
- stopSpeech(){if(this.speechTimer)clearTimeout(this.speechTimer);this.finishSpeech?.();this.finishSpeech=null;this.speech?.cancel();}
+ stopSpeech(){this.audioAbort?.abort();this.audioAbort=null;if(this.audio){this.audio.pause();this.audio=null;}if(this.audioUrl){URL.revokeObjectURL(this.audioUrl);this.audioUrl=null;}if(this.speechTimer)clearTimeout(this.speechTimer);this.finishSpeech?.();this.finishSpeech=null;this.speech?.cancel();}
  stop(message='Voice band hai. Nayi request ke liye Talk to assistant dabayein.'){
   this.turn++;this.active=false;this.abortRecognition();this.stopSpeech();this.onStatus(message);return !this.submitting;
  }
+ async preview(){
+  if(this.submitting)return;this.stop();this.cloudUnavailable=false;const turn=++this.turn;
+  const step={message:'Urdu female voice sample. Cloud service configured na ho to browser fallback sunai degi.',speech:{ur:'السلام علیکم! میں آپ کی گیمنگ اسسٹنٹ ہوں۔ بتائیے، کون سا پی سی بک کرنا ہے؟',en:'Hello! I am your gaming assistant. Which PC would you like to book?',hi:'नमस्ते! मैं आपकी गेमिंग असिस्टेंट हूँ। कौन सा पीसी बुक करना है?'}};
+  this.onMessage('assistant',step.message);this.onStatus('Voice sample chal raha hai…');
+  try{await this.speak(step,turn);}catch{this.onStatus('Voice sample nahi chal saka. Browser ki sound permission check karein.');return;}
+  if(turn===this.turn)this.onStatus('Sample complete. Booking ke liye Talk to assistant dabayein.');
+ }
  async start(){
   if(this.submitting)return;
-  this.stop('Stations check ho rahe hain…');const turn=this.turn;
+  this.cloudUnavailable=false;this.stop('Stations check ho rahe hain…');const turn=this.turn;
   if(!this.Recognition){this.onStatus('Is browser mein speech recognition supported nahi. Chrome/Edge mein kholein ya form use karein.');return;}
   try{const devices=await this.getDevices();if(turn!==this.turn)return;this.dialogue=new VoiceBookingDialogue(devices);this.active=true;await this.present(this.dialogue.start());}
   catch{if(turn===this.turn)this.onStatus('Stations load nahi hue. Connection check karein aur dobara button dabayein.');}
  }
+ async cloudSpeak(text,turn){
+  const controller=new AbortController();this.audioAbort=controller;const signal=controller.signal;
+  const timer=setTimeout(()=>controller.abort(),24000);
+  let result;try{result=await this.synthesize(text,signal);}finally{clearTimeout(timer);}
+  if(turn!==this.turn)return;if(signal.aborted)throw new Error('Cloud voice timeout.');
+  const bytes=Uint8Array.from(atob(result.audioContent),c=>c.charCodeAt(0));
+  this.audioUrl=URL.createObjectURL(new Blob([bytes],{type:result.mimeType||'audio/mpeg'}));
+  const audio=new this.AudioClass(this.audioUrl);this.audio=audio;
+  await new Promise((resolve,reject)=>{
+   let done=false;const finish=(error)=>{if(done)return;done=true;clearTimeout(this.speechTimer);this.finishSpeech=null;error?reject(error):resolve();};
+   this.finishSpeech=()=>finish();audio.onended=()=>finish();audio.onerror=()=>finish(new Error('Audio play nahi ho saki. Browser ki sound permission check karein.'));
+   this.speechTimer=setTimeout(()=>{audio.pause();finish(new Error('Voice playback timeout.'));},45000);
+   audio.play().catch(e=>finish(e));
+  });
+  if(this.audio===audio){this.audio=null;URL.revokeObjectURL(this.audioUrl);this.audioUrl=null;}
+ }
  async speak(step,turn){
+  if(this.voiceName()==='cloud-urdu-female'&&this.synthesize&&!this.cloudUnavailable){
+   try{await this.cloudSpeak(step.speech.ur.replace(/\bPC (\d+)/g,'پی سی $1').replace(/\bPS5 (\d+)/g,'پلے اسٹیشن $1'),turn);return;}
+   catch(e){if(turn!==this.turn)return;this.cloudUnavailable=true;this.onMessage('assistant',`${e.message||'Cloud voice unavailable.'} Filhal browser voice use ho rahi hai.`);this.stopSpeech();}
+  }
   if(!this.speech||!this.Utterance)return;
   const voices=this.speech.getVoices(),selected=voices.find(v=>v.name===this.voiceName());
   const desired=this.language().split('-')[0];

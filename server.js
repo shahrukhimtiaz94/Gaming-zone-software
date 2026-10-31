@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { get, all, run, tx, ready } from './storage.js';
 import { describeError, indexConsoleLink } from './errors.js';
+import { synthesizeUrdu } from './firebase/speech.js';
 const root=fileURLToPath(new URL('.',import.meta.url));
 const now=()=>Date.now();
 const log=(actor,action)=>run('INSERT INTO audit(time,actor,action) VALUES(?,?,?)',now(),actor,action);
@@ -84,6 +85,18 @@ if(route==='/api/state'){
  return respond(res,200,{devices:snapshots,requests:await all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC"),sessions:await all('SELECT sessions.*,users.name AS staff,devices.name AS device FROM sessions JOIN users ON users.id=approved_by JOIN devices ON devices.id=device_id ORDER BY sessions.start DESC,sessions.id DESC LIMIT 5000'),audit:u.role==='owner'?await all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'):[]});
 }
 if(req.method!=='POST')fail('Not found',404);
+if(route==='/api/voice/speak'){
+ if(process.env.VOICE_PROVIDER!=='google')throw Object.assign(new Error('Natural Urdu female voice ke liye Google Text-to-Speech API aur VOICE_PROVIDER=google configure karein.'),{status:503,expose:true,code:'TTS_NOT_CONFIGURED'});
+ if(typeof body.text!=='string'||!body.text.trim()||Buffer.byteLength(body.text,'utf8')>4000)fail('Voice text 1 se 4000 bytes rakhein');
+ await tx(async()=>{
+  const identity=`voice:${u.id}`,a=await get('SELECT * FROM login_attempts WHERE identity=?',identity);
+  if(!a){await run('INSERT INTO login_attempts(identity,attempts,window_start) VALUES(?,?,?)',identity,1,now());return;}
+  if(now()-a.window_start>600000){await run('UPDATE login_attempts SET attempts=1,window_start=? WHERE identity=?',now(),identity);return;}
+  if(a.attempts>=60)fail('Voice request limit poori ho gayi. 10 minutes baad try karein ya browser voice use karein.',429);
+  await run('UPDATE login_attempts SET attempts=attempts+1 WHERE identity=?',identity);
+ });
+ return respond(res,200,await synthesizeUrdu(body.text));
+}
 if(route==='/api/device-key'){
  if(u.role!=='owner')fail('Owner only',403);
  const result=await tx(async()=>{

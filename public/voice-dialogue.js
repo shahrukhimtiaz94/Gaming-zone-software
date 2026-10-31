@@ -35,7 +35,7 @@ export class VoiceBookingDialogue{
   if(['submitting','done'].includes(this.phase))return null;
   const raw=digits(text).trim();
   if(cancellation(raw.toLowerCase())){this.phase='done';return prompt('Request cancel kar di. Koi session start nahi hua.','Cancelled. No session was started.','درخواست منسوخ کر دی۔ کوئی سیشن شروع نہیں ہوا۔','अनुरोध रद्द कर दिया। कोई सेशन शुरू नहीं हुआ।','done');}
-  if(/(?:^|\s)(?:unlock|approve|discount|free)(?:\s|$)/i.test(raw))return prompt('Main booking request bana sakta hoon. Unlock aur approval staff ke button se honge.','I can create a booking request. Only staff can approve and start the session using the dashboard.','میں بکنگ کی درخواست بنا سکتا ہوں۔ سیشن شروع کرنے کے لیے اسٹاف کو ڈیش بورڈ سے منظوری دینی ہوگی۔','मैं बुकिंग अनुरोध बना सकता हूँ। सेशन शुरू करने के लिए स्टाफ को डैशबोर्ड से मंजूरी देनी होगी।');
+  if(/(?:^|\s)(?:unlock|approve|discount|free)(?:\s|$)/i.test(raw))return prompt('Main booking request bana sakta hoon. Unlock aur approval staff ke button se honge.','I can create a booking request. Only staff can approve and start the session using the dashboard.','میں بکنگ کی درخواست بنا سکتی ہوں۔ سیشن شروع کرنے کے لیے اسٹاف کو ڈیش بورڈ سے منظوری دینی ہوگی۔','मैं बुकिंग अनुरोध बना सकती हूँ। सेशन शुरू करने के लिए स्टाफ को डैशबोर्ड से मंजूरी देनी होगी।');
   const parsed=parseBookingSpeech(raw);let changed=false;
   if(parsed.device!==null){this.draft.device=parsed.device;this.kind=parsed.kind;changed=true;}
   else if(this.phase==='device'){if(parsed.kind==='PS5')this.kind='PS5';const bare=normalize(raw);if(/^\d+$/.test(bare)){this.draft.device=Number(bare)+(this.kind==='PS5'?10:0);changed=true;}}

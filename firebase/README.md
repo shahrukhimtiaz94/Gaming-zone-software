@@ -59,3 +59,21 @@ If a composite index is missing or still building, the backend retries only that
 The official emulator does not enforce missing composite indexes. To exercise the recovery path explicitly against real emulator data, run `NEXUS_TEST_FIRESTORE_EMULATOR=127.0.0.1:8085 NEXUS_TEST_MISSING_INDEX=1 npm test`. A test-process-only import hook rejects composite queries and verifies the booking workflow still succeeds; it never runs in the deployed application.
 
 API errors now distinguish missing indexes, denied server permissions and missing databases where the provider supplies a known error code. Unexpected failures retain a generic message and include a reference that can be matched in Vercel Runtime Logs. Raw error messages/credentials are not sent to the browser or logs; index-specific Firebase Console URLs can be logged to help configure the index.
+
+## Natural Urdu female voice (Google Cloud)
+
+The voice assistant can synthesize Urdu audio with Google's Cloud Text-to-Speech using the **same server-side service account** already configured for Firebase. No private key belongs in browser code. This voice service is separate from Firestore and is not enabled just by installing Firebase.
+
+1. Open https://console.cloud.google.com/apis/library/texttospeech.googleapis.com?project=gaming-zone-software and enable **Cloud Text-to-Speech API** for the correct project.
+2. Link/enable Google Cloud billing if required. Synthesis can incur charges according to the selected voice model and usage; check pricing and budget alerts in your project. No billing/API changes were performed by the agent.
+3. Ensure the existing service account is authorized to use the API in that project. If access is denied, inspect its IAM/service usage permissions rather than creating or pasting another key into chat.
+4. In Vercel Production Environment Variables add `VOICE_PROVIDER=google` and redeploy. Keep the existing Firebase credential variables. The backend obtains a scoped OAuth token from those credentials and never returns it to the browser.
+5. Select **Urdu female — Google Cloud** in the dashboard and click **Awaaz sunain**. Urdu speech recognition is selected by default. If your browser blocks audio, enable sound for the site and click again.
+
+The backend lists available Urdu voices, filters on the provider's FEMALE gender metadata, and prefers Chirp/Neural/WaveNet models over Standard. Availability and quality depend on Google's current Urdu voice inventory; the app does not promise a particular voice model. An optional `URDU_VOICE_NAME` selects an exact available FEMALE Urdu voice. If no eligible voice exists, it reports that clearly.
+
+Only authenticated owners/staff can call the synthesis endpoint. It limits text to 4,000 UTF-8 bytes and enforces 60 calls per account per ten-minute window using persistent database transactions. The browser stops listening while audio plays, and stopping voice cancels pending speech fetch/playback. A provider error produces a visible explanation, then falls back to system/browser speech for that conversation. Browser fallback is not guaranteed to be female or Urdu if the OS lacks a suitable voice; it can speak English instead.
+
+Booking prompt text, including customer names embedded in those prompts, is sent to Google for synthesis. This does not stream game audio or enable a general-purpose LLM. Requests still need explicit confirmation and staff button approval. Voice cannot approve, unlock or change payments.
+
+Tests verify voice metadata selection, request payloads, disabled API/credential errors, authentication, cloud playback ordering and fallback without calling the paid API. Real synthesized audio and this project's TTS permissions/billing have **not** been verified from the cloud workspace.

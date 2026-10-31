@@ -1,7 +1,7 @@
 import {VoiceAssistant} from './voice.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state,user,tab='live';
-async function api(path,data){const r=await fetch('/api/'+path,data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{});const v=await r.json();if(!r.ok)throw Error([v.error,v.code?'('+v.code+')':'',v.reference?'Ref: '+v.reference:''].filter(Boolean).join(' '));return v;}
+async function api(path,data,signal){const r=await fetch('/api/'+path,{...(data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{}),...(signal?{signal}:{})});const v=await r.json();if(!r.ok)throw Error([v.error,v.code?'('+v.code+')':'',v.reference?'Ref: '+v.reference:''].filter(Boolean).join(' '));return v;}
 function error(e){$('#error').textContent=e.message;}
 const remainingBill=s=>Math.max(0,bill(s)-(s.paid_amount||0));
 const money=n=>'Rs '+Math.round(n).toLocaleString(),hours=n=>(n/3600000).toFixed(1)+'h',bill=s=>(s.end-s.start)/3600000*s.rate;
@@ -25,17 +25,18 @@ $('#showKey').onclick=()=>{$('#deviceKey').type=$('#deviceKey').type==='password
 $('#revoke').onclick=async()=>{if(!confirm('PC ki key revoke karein? Agent next contact par block karega; offline PC expiry tak chal sakta hai.'))return;try{await api('device-key',{device:Number($('#pair [name=device]').value),revoke:true});$('#deviceKey').value='';$('#keyBox').hidden=true;await refresh();}catch(e){error(e);}};
 
 const assistant=new VoiceAssistant({
+ synthesize:(text,signal)=>api('voice/speak',{text},signal),
  getDevices:async()=>{const next=await api('state');state=next;render();return next.devices;},
  createRequest:async draft=>{await api('request',draft);await refresh();},
  onFields:draft=>{if(draft.device!==null)$('#station').value=String(draft.device);if(draft.minutes!==null)$('#booking [name=minutes]').value=draft.minutes;if(draft.customer)$('#booking [name=customer]').value=draft.customer;},
  onMessage:(role,text)=>{const row=document.createElement('p');const label=document.createElement('strong');label.textContent=role==='you'?'You: ':'Assistant: ';row.append(label,document.createTextNode(text));$('#voiceLog').append(row);while($('#voiceLog').children.length>12)$('#voiceLog').firstElementChild.remove();row.scrollIntoView({block:'nearest'});},
  onStatus:text=>{$('#voiceNote').textContent=text;$('#voice').setAttribute('aria-pressed',String(assistant.active));},
- onSubmitting:busy=>{$('#booking button').disabled=busy;$('#voice').disabled=busy;$('#voiceRetry').disabled=busy;},
+ onSubmitting:busy=>{$('#booking button').disabled=busy;$('#voice').disabled=busy;$('#voiceRetry').disabled=busy;$('#voicePreview').disabled=busy;},
  language:()=>$('#voiceLanguage').value,voiceName:()=>$('#voiceChoice').value
 });
-$('#voice').onclick=()=>assistant.start();$('#voiceRetry').onclick=()=>assistant.listen();$('#voiceStop').onclick=()=>assistant.stop();
+$('#voice').onclick=()=>assistant.start();$('#voicePreview').onclick=()=>assistant.preview();$('#voiceRetry').onclick=()=>assistant.listen();$('#voiceStop').onclick=()=>assistant.stop();
 $('#voiceLanguage').onchange=()=>assistant.stop('Zaban badal gayi. Talk to assistant se dobara shuru karein.');
 $('#voiceChoice').onchange=()=>assistant.stop('Voice badal gayi. Talk to assistant se dobara shuru karein.');
 $('#booking').addEventListener('input',e=>{if(e.isTrusted&&assistant.active)assistant.stop('Form manually change hua. Voice band hai; form submit karein ya assistant dobara shuru karein.');});
-function loadVoices(){const selected=$('#voiceChoice').value;$('#voiceChoice').replaceChildren(new Option('Automatic / available system voice',''));for(const voice of window.speechSynthesis?.getVoices()||[])$('#voiceChoice').add(new Option(`${voice.name} (${voice.lang})`,voice.name));if(selected)$('#voiceChoice').value=selected;}
+function loadVoices(){const selected=$('#voiceChoice').value;$('#voiceChoice').replaceChildren(new Option('Urdu female — Google Cloud','cloud-urdu-female'),new Option('Automatic / available system voice',''));for(const voice of window.speechSynthesis?.getVoices()||[])$('#voiceChoice').add(new Option(`${voice.name} (${voice.lang})`,voice.name));if(selected)$('#voiceChoice').value=selected;}
 loadVoices();window.speechSynthesis?.addEventListener('voiceschanged',loadVoices);
