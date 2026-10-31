@@ -1,12 +1,12 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { getFirestore } from 'firebase-admin/firestore';
+import { initializeFirestore } from 'firebase-admin/firestore';
 import { getFirebaseAdminApp } from './admin.js';
 import { withIndexFallback, boundedIndexFallback } from './index-fallback.js';
 
 const scope=new AsyncLocalStorage();
 let database;
 const root=()=>{
- database ||= getFirestore(getFirebaseAdminApp(), process.env.FIREBASE_DATABASE_ID||'(default)');
+ database ||= initializeFirestore(getFirebaseAdminApp(), {preferRest:!process.env.FIRESTORE_EMULATOR_HOST}, process.env.FIREBASE_DATABASE_ID||'(default)');
  return database.collection('nexus_zone').doc('gaming-zone');
 };
 const tableRef=table=>root().collection(table);
@@ -136,10 +136,14 @@ export async function tx(fn){
 }
 let initialization;
 export function ready(){
- if(!initialization)initialization=tx(async()=>{
+ if(!initialization)initialization=(async()=>{
+  // Existing deployments need a read, not a schema transaction on every cold start.
   if(await document('_meta','schema'))return;
-  for(let i=1;i<=12;i++)stage('devices',i,{id:i,name:i<=10?`PC ${i}`:`PS5 ${i-10}`,kind:i<=10?'PC':'PS5',rate:i<=10?300:500});
-  stage('_meta','schema',{version:1});
- }).catch(e=>{initialization=null;throw e;});
+  await tx(async()=>{
+   if(await document('_meta','schema'))return;
+   for(let i=1;i<=12;i++)stage('devices',i,{id:i,name:i<=10?`PC ${i}`:`PS5 ${i-10}`,kind:i<=10?'PC':'PS5',rate:i<=10?300:500});
+   stage('_meta','schema',{version:1});
+  });
+ })().catch(e=>{initialization=null;throw e;});
  return initialization;
 }
