@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {withIndexFallback,boundedIndexFallback} from '../firebase/index-fallback.js';
-import {describeError,indexConsoleLink} from '../errors.js';
+import {describeError,indexConsoleLink,safeErrorLocation} from '../errors.js';
 
 test('missing composite index uses fallback; healthy query avoids unnecessary reads',async()=>{
  let calls=0;
@@ -28,4 +28,12 @@ test('fallback refuses oversized history instead of omitting a possible active s
  const rows={docs:new Array(5001)};
  assert.throws(()=>boundedIndexFallback(rows),e=>e.code==='FIRESTORE_INDEX_REQUIRED');
  const valid={docs:[]};assert.equal(boundedIndexFallback(valid),valid);
+});
+
+test('Firestore quota, contention and transient failures are actionable without exposing raw data',()=>{
+ assert.equal(describeError({code:8,message:'quota with SECRET'}).code,'FIREBASE_QUOTA_EXCEEDED');
+ assert.equal(describeError({code:10}).code,'FIREBASE_TRANSACTION_BUSY');
+ for(const code of [4,14])assert.equal(describeError({code}).code,'FIREBASE_TEMPORARILY_UNAVAILABLE');
+ assert.equal(describeError(new Error('Unsupported Firestore mutation')).code,'FIREBASE_QUERY_UNSUPPORTED');
+ const e=new Error('SECRET');e.stack='Error: SECRET\n at run (file:///workspace/app/assistant/devices.js:42:12)';assert.equal(safeErrorLocation(e),'assistant/devices.js:42:12');assert.ok(!JSON.stringify(describeError({code:8,message:'SECRET'})).includes('SECRET'));
 });

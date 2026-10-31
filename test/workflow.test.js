@@ -17,7 +17,7 @@ test('authenticated booking, authorization, billing and durable history',async()
  let proc,indexFailures=0;
  if(process.env.NEXUS_TEST_MISSING_INDEX)assert.ok(emulator,'Index failure injection requires emulator');
  const start=()=>new Promise((resolve,reject)=>{proc=spawn(process.execPath,process.env.NEXUS_TEST_MISSING_INDEX?['--import','./scripts/missing-index-hook.mjs','server.js']:['server.js'],{env:{...testEnv,DATA_DIR:dir,PORT:String(port),SETUP_KEY:'test-only-key'}});proc.stderr.on('data',chunk=>{const line=chunk.toString();indexFailures+=(line.match(/TEST_MISSING_COMPOSITE_INDEX/g)||[]).length;if(!line.includes('ExperimentalWarning')&&!line.includes('TEST_MISSING_COMPOSITE_INDEX'))process.stderr.write(line);});proc.stdout.once('data',resolve);proc.once('error',reject);proc.once('exit',code=>reject(Error('Server exited '+code)));});
- const call=async(path,body,cookie,bearer)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${process.env.NEXUS_TEST_REWRITE?"index?route="+encodeURIComponent(path):path}`,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(bearer?{Authorization:'Bearer '+bearer}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
+ const call=async(path,body,cookie,bearer)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${process.env.NEXUS_TEST_REWRITE?"index?route="+encodeURIComponent(path.split('?')[0])+(path.includes('?')?'&'+path.split('?')[1]:''):path}`,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(bearer?{Authorization:'Bearer '+bearer}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
  try{await start();assert.equal((await call('state')).status,401);assert.equal((await call('setup',{key:'wrong',name:'owner',password:'long-password-123'})).status,403);
  assert.equal((await call('setup',{key:'test-only-key',name:'owner',password:'long-password-123'})).status,200);
  const owner=(await call('login',{name:'owner',password:'long-password-123'})).cookie;assert.ok(owner);
@@ -38,6 +38,7 @@ test('authenticated booking, authorization, billing and durable history',async()
  s=(await call('state',null,owner)).data;assert.equal(s.devices[0].session.customer,'Ahmed');assert.equal(s.sessions.length,1);assert.equal(s.sessions[0].rate,300);
  poll=await call('agent/poll',{state:'enabled'},null,key);assert.equal(poll.data.session.id,s.sessions[0].id);assert.ok(poll.data.session.remainingMs>3590000&&poll.data.session.remainingMs<=3600000);
  assert.ok(!JSON.stringify(s).includes(key));
+ const lite=await call('state?history=0&audit=0',null,owner);assert.equal(lite.status,200);assert.equal(lite.data.devices[0].session.customer,'Ahmed');assert.equal('sessions' in lite.data,false);assert.equal('audit' in lite.data,false);assert.ok(!JSON.stringify(lite.data).includes('key_hash'));
  const sessionId=s.sessions[0].id,originalEnd=s.sessions[0].end;
  assert.equal((await call('extend',{id:sessionId,minutes:60,expectedEnd:originalEnd})).status,401);
  assert.equal((await call('extend',{id:sessionId,minutes:60,expectedEnd:originalEnd},null,key)).status,401);

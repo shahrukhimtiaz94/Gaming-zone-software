@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { get, all, run, tx, ready } from './storage.js';
-import { describeError, indexConsoleLink } from './errors.js';
+import { describeError, indexConsoleLink, safeErrorLocation } from './errors.js';
 import { synthesizeUrdu } from './firebase/speech.js';
 import {createAgent,createGeminiClient} from './assistant/gemini.js';
 import {zoneTools,supportedActions} from './assistant/tools.js';
@@ -83,11 +83,13 @@ if(route==='/api/logout'&&req.method==='POST'){
 }
 if(route==='/api/state'){
  const allDevices=await all('SELECT * FROM devices ORDER BY id'),devices=allDevices.filter(d=>!d.archived);
- const snapshots=await Promise.all(devices.map(async d=>{
-  const a=await get('SELECT last_seen,state,version,session_id,session_end FROM agents WHERE device_id=?',d.id);
-  return {...d,session:(await active(d.id))||null,agent:a?{...a,online:a.last_seen!=null&&now()-a.last_seen<20000}:null};
- }));
- return respond(res,200,{devices:snapshots,allDevices:u.role==='owner'?allDevices:undefined,requests:await all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC"),sessions:await all('SELECT sessions.*,users.name AS staff,devices.name AS device FROM sessions JOIN users ON users.id=approved_by JOIN devices ON devices.id=device_id ORDER BY sessions.start DESC,sessions.id DESC LIMIT 5000'),audit:u.role==='owner'?await all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'):[]});
+ const [agents,liveSessions]=await Promise.all([
+  all('SELECT device_id,last_seen,state,version,session_id,session_end FROM agents'),
+  all('SELECT * FROM sessions WHERE stopped IS NULL AND end>?',now())
+ ]);
+ const agentByDevice=new Map(agents.map(a=>[a.device_id,a]));const sessionByDevice=new Map(liveSessions.map(s=>[s.device_id,s]));
+ const snapshots=devices.map(d=>{const a=agentByDevice.get(d.id);return {...d,session:sessionByDevice.get(d.id)||null,agent:a?{...a,online:a.last_seen!=null&&now()-a.last_seen<20000}:null};});
+ return respond(res,200,{devices:snapshots,allDevices:u.role==='owner'?allDevices:undefined,requests:await all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC"),sessions:url.searchParams.get('history')==='0'?undefined:await all('SELECT sessions.*,users.name AS staff,devices.name AS device FROM sessions JOIN users ON users.id=approved_by JOIN devices ON devices.id=device_id ORDER BY sessions.start DESC,sessions.id DESC LIMIT 5000'),audit:url.searchParams.get('audit')==='0'?undefined:u.role==='owner'?await all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'):[]});
 }
 if(req.method!=='POST')fail('Not found',404);
 if(route==='/api/devices'){return respond(res,200,await manageDevices(body,u));}
@@ -186,7 +188,7 @@ if(route==='/api/request'){
  await tx(async()=>{if(await get('SELECT id FROM users WHERE name=?',name))fail('Ye naam pehle se use ho raha hai',409);await credentials(name,body.password,'staff');await log(u.name,`Staff account created: ${name}`);});
 }else fail('Not found',404);
 respond(res,200,{ok:true});
-}catch(e){const problem=describeError(e);const reference=randomBytes(6).toString('hex');respond(res,problem.status,{error:problem.error,...(problem.code?{code:problem.code,reference}:{})});if(!e.expose||problem.status>=500)console.error('Request failed:',JSON.stringify({reference,code:e.code||e.name,route:new URL(req.url,'http://localhost').pathname,indexUrl:indexConsoleLink(e)}));}}
+}catch(e){const problem=describeError(e);const reference=randomBytes(6).toString('hex');respond(res,problem.status,{error:problem.error,...(problem.code?{code:problem.code,reference}:{})});if(!e.expose||problem.status>=500)console.error('Request failed:',JSON.stringify({reference,code:e.code||e.name,route:new URL(req.url,'http://localhost').pathname,indexUrl:indexConsoleLink(e),location:safeErrorLocation(e)}));}}
 
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
  await ready();

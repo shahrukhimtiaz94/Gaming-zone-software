@@ -31,6 +31,11 @@ const desc=(...fields)=>(a,b)=>{for(const f of fields){if(a[f]!==b[f])return b[f
 // This dispatcher supports only the app's fixed internal statements. It is not a SQL parser
 // and never accepts statements from HTTP requests. Unknown statements fail closed.
 export async function all(sql,...v){
+ if(sql==='SELECT device_id,last_seen,state,version,session_id,session_end FROM agents'){
+  const result=await rows('agents',tableRef('agents').select('device_id','last_seen','state','version','session_id','session_end'));
+  return result.map(({device_id,last_seen,state,version,session_id,session_end})=>({device_id,last_seen:last_seen??null,state:state??null,version:version??null,session_id:session_id??null,session_end:session_end??null}));
+ }
+ if(sql==='SELECT * FROM sessions WHERE stopped IS NULL AND end>?')return rows('sessions',tableRef('sessions').where('end','>',v[0]),r=>r.stopped===null&&r.end>v[0]);
  if(sql==='SELECT * FROM devices ORDER BY id')return rows('devices',tableRef('devices').orderBy('id'),()=>true,(a,b)=>a.id-b.id);
  if(sql==="SELECT * FROM requests WHERE status='pending' ORDER BY id DESC")return rows('requests',tableRef('requests').where('status','==','pending').orderBy('id','desc'),r=>r.status==='pending',desc('id'),Infinity,()=>snapshot(tableRef('requests').where('status','==','pending')));
  if(sql==='SELECT * FROM audit ORDER BY id DESC LIMIT 100')return rows('audit',tableRef('audit').orderBy('id','desc').limit(100),()=>true,desc('id'),100);
