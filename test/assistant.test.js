@@ -52,3 +52,18 @@ test('transport errors and timeouts do not masquerade as provider HTTP status',a
  await assert.rejects(client({}),e=>e.code==='AI_NETWORK_ERROR'&&!e.message.includes('secret-network-detail'));
  const signal=AbortSignal.abort();await assert.rejects(client({},signal),e=>e.code==='AI_TIMEOUT');
 });
+
+test('default discovery prefers stable Flash-Lite without changing explicit model settings',()=>{
+ const models=[{name:'models/gemini-3-flash',supportedGenerationMethods:['generateContent']},{name:'models/gemini-2.5-flash-lite',supportedGenerationMethods:['generateContent']}];assert.equal(chooseModel(models),'gemini-2.5-flash-lite');
+});
+test('temporary 503 retries once on exactly the same model and payload, then recovers',async()=>{
+ const requests=[];let pauses=0;
+ const client=createGeminiClient({key:()=> 'test-only',configuredModel:()=> 'gemini-2.5-flash-lite',pause:async()=>{pauses++;},fetcher:async(url,options)=>{requests.push({url,body:options.body});return requests.length===1?{ok:false,status:503}:{ok:true,status:200,json:async()=>final(answer)};}});
+ assert.deepEqual(await client({contents:[]}),final(answer));assert.equal(requests.length,2);assert.deepEqual(requests[0],requests[1]);assert.equal(pauses,1);
+});
+test('persistent 503 stops after one retry; quota/auth failures never retry',async()=>{
+ for(const status of [503,429,401]){
+  let calls=0;const client=createGeminiClient({key:()=> 'test-only',configuredModel:()=> 'gemini-2.5-flash-lite',pause:async()=>{},fetcher:async()=>{calls++;return {ok:false,status,json:async()=>({})};}});
+  await assert.rejects(client({}),e=>status===503?e.code==='AI_PROVIDER_UNAVAILABLE'&&e.message.includes('gemini-2.5-flash-lite'):status===429?e.code==='AI_QUOTA_EXCEEDED':e.code==='AI_AUTH_FAILED');assert.equal(calls,status===503?2:1);
+ }
+});

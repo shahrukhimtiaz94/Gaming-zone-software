@@ -5,7 +5,7 @@ The dashboard now includes a real model-backed conversation mode, alongside the 
 ## Enable on Vercel
 
 1. Add your existing AI Studio key as **GEMINI_API_KEY** directly in Vercel Project Settings → Environment Variables → Production. Never send it in chat or commit it. It stays server-side and is sent to Google in a request header, not a browser bundle or URL.
-2. Redeploy the latest main commit. An optional **GEMINI_MODEL** selects an exact supported model ID. Without it, the backend discovers available stable Flash models and prefers the newest version, with Lite first at a version tie. It excludes Pro, preview, live/audio/image/TTS models.
+2. Redeploy the latest main commit. An optional **GEMINI_MODEL** selects an exact supported model ID. Without it, the backend discovers available stable Flash models and prefers stable Flash-Lite before full Flash, then the newest available version within that class. It excludes Pro, preview, live/audio/image/TTS models.
 3. For free voice, choose **Free browser / system voice**. Leave VOICE_PROVIDER unset; paid Google Cloud speech is optional and not required for the AI agent. Do not enable billing solely for that optional voice.
 4. In **Real AI agent** mode, type a question or click **Talk to assistant** and allow the microphone. **New conversation** clears in-page conversation context; logout clears it too.
 
@@ -35,7 +35,7 @@ Gemini generates separate Urdu-script, Hindi-script and English speech text, whi
 
 The assistant sends your messages, a bounded in-page conversation and relevant tool data (which can include customer names/history) to Google. It does not send password hashes, device keys or server credentials as tool data. Database text/customer names are treated as data, not instructions. Read-only responses are bounded: recent 5,000 sessions, 20 customer/audit results, 30 pending requests. Large history can be truncated and the model receives that flag.
 
-The server limits chat to 30 user turns per account per ten-minute window, three model rounds, eight total tool calls and three proposed cards per turn. It does not automatically retry model failures or execute actions after timeouts. Action records are separate from authentication sessions and contain no usable login credential.
+The server limits chat to 30 user turns per account per ten-minute window, three model rounds, eight total tool calls and three proposed cards per turn. For provider HTTP 502/503/504 only, it retries once on the identical model URL and payload after a short delay within the existing deadline. It does not retry quota/authentication failures or transport timeouts, does not switch to another model after an error, and never replays staff-confirmed system actions. Action records are separate from authentication sessions and contain no usable login credential.
 
 ## Validation and remaining external check
 
@@ -48,3 +48,5 @@ The live Gemini key/model, provider quota, microphone and actual voice quality h
 Click **Check AI connection** for a short typed greeting without microphone input. If the API fails, its message now distinguishes invalid keys (AI_KEY_INVALID), authentication (AI_AUTH_FAILED), project API access (AI_API_DISABLED), key restrictions (AI_KEY_RESTRICTED), model-not-found (AI_MODEL_NOT_FOUND), quota, region, timeout, network and provider HTTP errors. It does not print or return Google's raw error body or your key. AQ-prefixed keys are not rejected solely for their prefix. API keys must be copied as values without surrounding quotes, newlines or Bearer prefixes; Live API ephemeral tokens are not accepted for generateContent.
 
 A configured key and redeploy alone do not establish that Google accepted that key/model. Verify the connection test before trying a data/action question. Report the displayed error code/reference if it still fails; never share the full key.
+
+A Google HTTP 503 indicates provider-side unavailability, not an instruction to rotate keys or enable billing. The app now displays the selected model on a persistent 5xx response. If GEMINI_MODEL is explicitly set, it remains authoritative; clear it to use available stable Flash-Lite discovery. If 503 persists after the bounded retry, test the same supported model in AI Studio and retry later. This workspace cannot establish the health of your live model from mocked retry tests.
