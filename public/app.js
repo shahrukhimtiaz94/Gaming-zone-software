@@ -1,4 +1,5 @@
 import {VoiceAssistant} from './voice.js';
+import {AIChatAssistant} from './ai-agent.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state,user,tab='live';
 async function api(path,data,signal){const r=await fetch('/api/'+path,{...(data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{}),...(signal?{signal}:{})});const v=await r.json();if(!r.ok)throw Error([v.error,v.code?'('+v.code+')':'',v.reference?'Ref: '+v.reference:''].filter(Boolean).join(' '));return v;}
@@ -17,26 +18,37 @@ const from=range(),ss=state.sessions.filter(s=>s.start>=from);$('#usage').innerH
 $('nav').onclick=e=>{const b=e.target.closest('[data-tab]');if(!b)return;tab=b.dataset.tab;document.querySelectorAll('.tab').forEach(s=>s.hidden=s.id!==tab);document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));$('#title').textContent=b.textContent.trim().slice(1).trim();};$('nav button').classList.add('active');
 $('#booking').onsubmit=async e=>{e.preventDefault();if(assistant.submitting)return;assistant.stop();try{await api('request',Object.fromEntries(new FormData(e.target)));e.target.customer.value='';await refresh();}catch(e){error(e);}};
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b)return;try{if(b.dataset.extend){const s=state.sessions.find(s=>s.id===Number(b.dataset.extend));if(!s)return;const answer=prompt('Kitne extra minutes? (5–720)', '60');if(answer===null)return;const minutes=Number(answer);if(!Number.isInteger(minutes)||minutes<5||minutes>720)throw Error('5 se 720 minutes enter karein.');if(!confirm(`${s.customer}: ${minutes} minutes aur ${money(minutes/60*s.rate)} extra approve karein? Offline PC ko naya time connection ke baad milega.`))return;b.disabled=true;try{const result=await api('extend',{id:s.id,minutes,expectedEnd:s.end});await refresh();alert(result.message);}finally{b.disabled=false;}return;}if(b.dataset.select){assistant.stop();$('#station').value=b.dataset.select;$('#booking input').focus();}for(const action of ['approve','reject','stop','pay'])if(b.dataset[action]){if(action!=='reject'&&!confirm(action==='approve'?'Session approve karke timer shuru karein?':action==='pay'?'Payment receive ho gayi hai?':'Session abhi end karein? Full booked bill rahega.'))return;await api(action,{id:b.dataset[action]});await refresh();}}catch(e){error(e);}});
-$('#staff').onsubmit=async e=>{e.preventDefault();try{await api('staff',Object.fromEntries(new FormData(e.target)));e.target.reset();alert('Staff account created');await refresh();}catch(e){error(e);}};$('#logout').onclick=async()=>{assistant.stop();$('#deviceKey').value='';$('#keyBox').hidden=true;await api('logout',{});user=null;await init();};$('#period').onchange=()=>state&&render();
+$('#staff').onsubmit=async e=>{e.preventDefault();try{await api('staff',Object.fromEntries(new FormData(e.target)));e.target.reset();alert('Staff account created');await refresh();}catch(e){error(e);}};$('#logout').onclick=async()=>{bookingAssistant.stop();aiAssistant.clear();$('#voiceLog').replaceChildren();$('#deviceKey').value='';$('#keyBox').hidden=true;await api('logout',{});user=null;await init();};$('#period').onchange=()=>state&&render();
 setInterval(()=>{$('#clock').textContent=new Date().toLocaleString('en-PK',{dateStyle:'full',timeStyle:'short'});},1000);setInterval(refresh,10000);init();
 
 $('#pair').onsubmit=async e=>{e.preventDefault();if(!confirm('Is PC ki purani key band ho jayegi. Nayi key banayein?'))return;try{const r=await api('device-key',{device:Number(e.target.device.value)});$('#deviceKey').value=r.key;$('#deviceKey').type='password';$('#keyBox').hidden=false;await refresh();}catch(e){error(e);}};
 $('#showKey').onclick=()=>{$('#deviceKey').type=$('#deviceKey').type==='password'?'text':'password';};
 $('#revoke').onclick=async()=>{if(!confirm('PC ki key revoke karein? Agent next contact par block karega; offline PC expiry tak chal sakta hai.'))return;try{await api('device-key',{device:Number($('#pair [name=device]').value),revoke:true});$('#deviceKey').value='';$('#keyBox').hidden=true;await refresh();}catch(e){error(e);}};
 
-const assistant=new VoiceAssistant({
+let assistant;
+const voiceOptions={
  synthesize:(text,signal)=>api('voice/speak',{text},signal),
  getDevices:async()=>{const next=await api('state');state=next;render();return next.devices;},
  createRequest:async draft=>{await api('request',draft);await refresh();},
  onFields:draft=>{if(draft.device!==null)$('#station').value=String(draft.device);if(draft.minutes!==null)$('#booking [name=minutes]').value=draft.minutes;if(draft.customer)$('#booking [name=customer]').value=draft.customer;},
  onMessage:(role,text)=>{const row=document.createElement('p');const label=document.createElement('strong');label.textContent=role==='you'?'You: ':'Assistant: ';row.append(label,document.createTextNode(text));$('#voiceLog').append(row);while($('#voiceLog').children.length>12)$('#voiceLog').firstElementChild.remove();row.scrollIntoView({block:'nearest'});},
  onStatus:text=>{$('#voiceNote').textContent=text;$('#voice').setAttribute('aria-pressed',String(assistant.active));},
- onSubmitting:busy=>{$('#booking button').disabled=busy;$('#voice').disabled=busy;$('#voiceRetry').disabled=busy;$('#voicePreview').disabled=busy;},
+ onSubmitting:busy=>{$('#booking button').disabled=busy;$('#voice').disabled=busy;$('#voiceRetry').disabled=busy;$('#voicePreview').disabled=busy;$('#aiSend').disabled=busy;},
  language:()=>$('#voiceLanguage').value,voiceName:()=>$('#voiceChoice').value
-});
+};
+const bookingAssistant=new VoiceAssistant(voiceOptions);
+const aiAssistant=new AIChatAssistant({...voiceOptions,chat:(body,signal)=>api('assistant/chat',body,signal),onActions:cards=>{
+ $('#aiActions').replaceChildren();for(const card of cards){const row=document.createElement('div');row.className='request';const text=document.createElement('p');text.textContent=card.summary;const button=document.createElement('button');button.textContent=card.action==='pay'?'Owner: payment received confirm karein':'Staff: action confirm karein';button.dataset.aiConfirm=card.id;button.dataset.summary=card.summary;row.append(text,button);$('#aiActions').append(row);}
+}});
+assistant=aiAssistant;
+$('#assistantMode').onchange=()=>{assistant.stop();assistant=$('#assistantMode').value==='ai'?aiAssistant:bookingAssistant;$('#aiChat').hidden=assistant!==aiAssistant;$('#voiceNote').textContent=assistant===aiAssistant?'Real AI: apna sawal bol kar ya type karke poochein.':'Basic booking dialogue: PC, duration aur naam batayein.';};
+$('#aiChat').onsubmit=async e=>{e.preventDefault();const input=$('#aiMessage'),text=input.value.trim();if(!text||aiAssistant.submitting)return;input.value='';await aiAssistant.send(text);};
+$('#aiClear').onclick=()=>{aiAssistant.clear();$('#voiceLog').replaceChildren();};
+document.addEventListener('click',async e=>{const button=e.target.closest('[data-ai-confirm]');if(!button)return;assistant.stop();if(!confirm(button.dataset.summary+'\nIs action ko ab apply karein?'))return;button.disabled=true;try{const result=await api('assistant/confirm',{id:button.dataset.aiConfirm});button.closest('.request').remove();await refresh();await aiAssistant.confirmed(result);}catch(e){error(e);button.disabled=false;}});
+
 $('#voice').onclick=()=>assistant.start();$('#voicePreview').onclick=()=>assistant.preview();$('#voiceRetry').onclick=()=>assistant.listen();$('#voiceStop').onclick=()=>assistant.stop();
 $('#voiceLanguage').onchange=()=>assistant.stop('Zaban badal gayi. Talk to assistant se dobara shuru karein.');
 $('#voiceChoice').onchange=()=>assistant.stop('Voice badal gayi. Talk to assistant se dobara shuru karein.');
 $('#booking').addEventListener('input',e=>{if(e.isTrusted&&assistant.active)assistant.stop('Form manually change hua. Voice band hai; form submit karein ya assistant dobara shuru karein.');});
-function loadVoices(){const selected=$('#voiceChoice').value;$('#voiceChoice').replaceChildren(new Option('Urdu female — Google Cloud','cloud-urdu-female'),new Option('Automatic / available system voice',''));for(const voice of window.speechSynthesis?.getVoices()||[])$('#voiceChoice').add(new Option(`${voice.name} (${voice.lang})`,voice.name));if(selected)$('#voiceChoice').value=selected;}
+function loadVoices(){const selected=$('#voiceChoice').value;$('#voiceChoice').replaceChildren(new Option('Free browser / system voice',''),new Option('Urdu female — Google Cloud (paid setup)','cloud-urdu-female'));for(const voice of window.speechSynthesis?.getVoices()||[])$('#voiceChoice').add(new Option(`${voice.name} (${voice.lang})`,voice.name));if(selected)$('#voiceChoice').value=selected;}
 loadVoices();window.speechSynthesis?.addEventListener('voiceschanged',loadVoices);

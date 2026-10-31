@@ -29,7 +29,7 @@ The default listener is loopback only. For private LAN testing, set HOST=0.0.0.0
 - Daily, past-seven-day and calendar-month reports use the browser timezone. Usage time is clipped to the chosen period; booked value is attributed to the session start date. Reports currently load the latest 5,000 sessions and audit screen the latest 100 events.
 - Owner audit history records approval, early stopping, requests, staff creation and payment marking. No delete/edit-record API exists. This is not a tamper-proof external ledger: a server/database administrator can alter files.
 - Natural Urdu female cloud voice is available through Google Cloud Text-to-Speech after enabling the API/billing and setting VOICE_PROVIDER=google in Vercel; see [voice setup](firebase/README.md#natural-urdu-female-voice-google-cloud). The Awaaz sunain button previews it. It uses the existing Firebase server credential, sends prompt text to Google, and falls back visibly to browser speech if unavailable. Live cloud audio has not been verified from this workspace.
-- Talk to assistant runs a spoken booking dialogue: station and duration, customer name, price confirmation, then saves a pending request after an explicit yes/haan. The assistant speaks the saved result only after server success; staff must separately approve with the dashboard button. English, Roman Urdu number words, Urdu and Hindi commands are supported for this bounded booking flow. Select recognition language and available system voice; responses fall back to English if an appropriate Urdu/Hindi voice is unavailable. Use Chrome/Edge with microphone permission. Speech recognition may use the browser vendor's online service. This is a deterministic booking assistant, not an LLM, voice identity verification, or general-purpose chatbot.
+- Talk to assistant runs a spoken booking dialogue: station and duration, customer name, price confirmation, then saves a pending request after an explicit yes/haan. The assistant speaks the saved result only after server success; staff must separately approve with the dashboard button. English, Roman Urdu number words, Urdu and Hindi commands are supported for this bounded booking flow. Select recognition language and available system voice; responses fall back to English if an appropriate Urdu/Hindi voice is unavailable. Use Chrome/Edge with microphone permission. Speech recognition may use the browser vendor's online service. This basic mode uses a deterministic dialogue. Real AI mode uses Gemini and the server tools described below. Neither mode verifies a speaker’s identity.
 
 ## Important integration boundaries
 
@@ -37,7 +37,7 @@ The default listener is loopback only. For private LAN testing, set HOST=0.0.0.0
 
 Before unattended commercial use, complete the Windows acceptance checklist, strengthen boot/logon gating (an enabled account can remain enabled before the startup task runs), and keep a separately secured Windows admin account. Test games, offline expiry, reboot and recovery on an actual spare PC. A browser overlay alone is insufficient. PS5 needs separately assessed hardware integration.
 
-WhatsApp, email/push notifications, online payment verification, conversational AI, rate editing, password recovery, user deactivation, backups automation and production deployment are not implemented. No customer telephone numbers are collected in this version.
+WhatsApp, email/push notifications, online payment verification, rate editing, password recovery, user deactivation, backups automation and production deployment are not implemented. No customer telephone numbers are collected in this version.
 
 ## Data and validation
 
@@ -51,7 +51,11 @@ The integration test launches the actual HTTP server with a temporary database, 
 
 Use the existing checkout for future work; cloud tasks already provide isolation, so no extra Git worktree is required.
 
-## Spoken booking example
+## Real AI agent
+
+Use Real AI agent mode for free-form system questions and server-backed tools, with multilingual speech and staff-confirmed action cards. Configure GEMINI_API_KEY securely in Vercel; see [AI setup and permissions](assistant/README.md). The free browser/system voice is the default. Provider quotas and installed Urdu/Hindi/English voices still apply. Basic booking mode remains available without a model key.
+
+## Spoken booking example (basic mode)
 
 Click **Talk to assistant** and allow the microphone. Say “PC number five for two hours”, answer “Ahmed” when asked for the customer name, then say “yes” after hearing the station/duration/price. The request appears under Awaiting approval; staff press Approve & start separately. Cancel/Stop voice ends the conversation; **Dobara suno** retries a silent recognition turn. The assistant aborts listening before speaking so it does not intentionally hear its own voice. A manual form edit stops the voice draft. During submission the manual submit button is disabled to prevent a second submission.
 

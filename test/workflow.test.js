@@ -2,7 +2,8 @@ import {test} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import pg from 'pg';
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {spawn,execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -94,6 +95,21 @@ test('authenticated booking, authorization, billing and durable history',async()
  const results=await Promise.all(competing.map(r=>call('approve',{id:r.id},staff)));
  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
  assert.equal((await call('state',null,owner)).data.sessions.filter(s=>s.device_id===3).length,1);
+ // Prepare through the real server tool layer, then exercise one-use authenticated confirmations.
+ const prepare=async(args,actor='owner')=>{const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',`import * as db from './storage.js';import {zoneTools} from './assistant/tools.js';await db.ready();const u=await db.get('SELECT * FROM users WHERE name=?',process.argv[2]);const r=await zoneTools('prepare_action',JSON.parse(process.argv[1]),u);process.stdout.write(JSON.stringify(r.card));`,JSON.stringify(args),actor],{env:{...testEnv,DATA_DIR:dir}});return JSON.parse(stdout);};
+ const card=await prepare({action:'request',device:4,customer:'AI player',minutes:30});
+ assert.equal((await call('state',null,owner)).data.requests.filter(r=>r.customer==='AI player').length,0,'Preparing must not create booking');
+ assert.equal((await call('assistant/confirm',{id:card.id},staff)).status,403,'Card belongs to preparing account');
+ assert.equal((await call('assistant/confirm',{id:card.id},owner)).status,200);
+ assert.equal((await call('assistant/confirm',{id:card.id},owner)).status,409,'Confirmation cannot replay');
+ const pending=(await call('state',null,owner)).data.requests.find(r=>r.customer==='AI player');assert.ok(pending);
+ assert.equal((await call('state',null,owner)).data.devices[3].session,null,'Request still needs separate staff approval');
+ const approval=await prepare({action:'approve',id:pending.id});assert.equal((await call('assistant/confirm',{id:approval.id},owner)).status,200);
+ const aiSession=(await call('state',null,owner)).data.devices[3].session;assert.equal(aiSession.customer,'AI player');
+ const extension=await prepare({action:'extend',id:aiSession.id,minutes:30});await call('extend',{id:aiSession.id,minutes:5,expectedEnd:aiSession.end},staff);
+ assert.equal((await call('assistant/confirm',{id:extension.id},owner)).status,409,'Stale preview cannot overwrite updated time');
+ assert.equal((await call('state',null,owner)).data.devices[3].session.end,aiSession.end+300000);
+ await assert.rejects(prepare({action:'pay',id:aiSession.id},'operator'));
  if(process.env.NEXUS_TEST_MISSING_INDEX)assert.ok(indexFailures>=4,'Must actually exercise composite-index fallback');
  assert.equal((await call('logout',{},owner)).status,200);assert.equal((await call('state',null,owner)).status,401);
  }finally{if(proc&&!proc.killed)await new Promise(resolve=>{proc.once('exit',resolve);proc.kill();});rmSync(dir,{recursive:true,force:true});}

@@ -40,7 +40,7 @@ async function query(sql, values = [], mode = 'all') {
   if (remote) {
     // Fully qualify only our tables: a dedicated schema avoids touching existing app tables.
     sql = sql.replace(/\bend\b/g, '"end"');
-    sql = sql.replace(/\b(users|tokens|devices|requests|sessions|agents|audit|login_attempts)\b/g, 'nexus_zone.$1');
+    sql = sql.replace(/\b(users|tokens|devices|requests|sessions|agents|audit|login_attempts|assistant_actions)\b/g, 'nexus_zone.$1');
     const insert = mode === 'run' && /^INSERT INTO (?:nexus_zone\.)?(users|devices|requests|sessions|audit)\b/i.test(sql);
     if (insert) sql += ' RETURNING id';
     const result = await (client || pool).query(placeholders(sql), values);
@@ -91,7 +91,8 @@ async function initialize() {
       `sessions(id ${id},device_id INTEGER,customer TEXT,start ${time},end ${time},stopped ${time},rate INTEGER,approved_by INTEGER,paid INTEGER DEFAULT 0)`,
       `agents(device_id INTEGER PRIMARY KEY,key_hash TEXT NOT NULL,last_seen ${time},state TEXT,version TEXT)`,
       `audit(id ${id},time ${time},actor TEXT,action TEXT)`,
-      `login_attempts(identity TEXT PRIMARY KEY,attempts INTEGER,window_start ${time})`
+      `login_attempts(identity TEXT PRIMARY KEY,attempts INTEGER,window_start ${time})`,
+      `assistant_actions(id TEXT PRIMARY KEY,user_id INTEGER,action TEXT,payload TEXT,expires ${time},consumed INTEGER DEFAULT 0)`
     ];
     for (let definition of definitions) {
       // END is reserved in PostgreSQL; keep API and SQLite names consistent with quoted SQL.

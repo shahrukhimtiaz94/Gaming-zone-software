@@ -10,7 +10,7 @@ const root=()=>{
  return database.collection('nexus_zone').doc('gaming-zone');
 };
 const tableRef=table=>root().collection(table);
-const keyFields={users:'id',tokens:'token',devices:'id',requests:'id',sessions:'id',agents:'device_id',audit:'id',login_attempts:'identity'};
+const keyFields={users:'id',tokens:'token',devices:'id',requests:'id',sessions:'id',agents:'device_id',audit:'id',login_attempts:'identity',assistant_actions:'id'};
 const defaults={sessions:{stopped:null,paid:0,paid_amount:0},requests:{status:'pending'},agents:{last_seen:null,state:null,version:null,session_id:null,session_end:null}};
 async function snapshot(ref){const c=scope.getStore();return c?c.transaction.get(ref):ref.get();}
 async function document(table,key){
@@ -65,7 +65,7 @@ export async function get(sql,...v){
  }
  if(sql==="SELECT * FROM requests WHERE id=? AND status='pending'"){const r=await document('requests',v[0]);return r?.status==='pending'?r:undefined;}
  if(sql==="SELECT * FROM devices WHERE id=? AND kind='PC'"){const d=await document('devices',v[0]);return d?.kind==='PC'?d:undefined;}
- const match=sql.match(/^SELECT \* FROM (devices|sessions|login_attempts) WHERE (id|identity)=\?$/);
+ const match=sql.match(/^SELECT \* FROM (devices|sessions|login_attempts|assistant_actions) WHERE (id|identity)=\?$/);
  if(match)return document(match[1],v[0]);
  throw new Error('Unsupported Firestore record query');
 }

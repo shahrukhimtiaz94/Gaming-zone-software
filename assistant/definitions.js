@@ -1,0 +1,7 @@
+export const definitions=[
+ {name:'zone_overview',description:'Read actual live stations, active sessions and pending booking requests. Required before discussing current availability or preparing a booking.',parameters:{type:'OBJECT',properties:{}}},
+ {name:'usage_report',description:'Calculate actual booked value, recorded payments and session elapsed time for today, last 7 days or this month in Pakistan time. Elapsed session time is not measured physical PC usage.',parameters:{type:'OBJECT',properties:{period:{type:'STRING',enum:['today','week','month']}},required:['period']}},
+ {name:'customer_history',description:'Find up to 20 recent sessions for the customer name. Read-only.',parameters:{type:'OBJECT',properties:{name:{type:'STRING'}},required:['name']}},
+ {name:'activity_log',description:'Read recent audit entries. Owner only.',parameters:{type:'OBJECT',properties:{}}},
+ {name:'prepare_action',description:'Prepare a validated action for an explicit staff button confirmation. This never executes a booking/unlock/extension/payment. Ask missing customer/time details first. Request creates only a pending booking. Approve starts a requested session. Only owner can mark received payment.',parameters:{type:'OBJECT',properties:{action:{type:'STRING',enum:['request','approve','extend','stop','pay','reject']},device:{type:'INTEGER'},customer:{type:'STRING'},minutes:{type:'INTEGER'},id:{type:'INTEGER'}},required:['action']}}
+];

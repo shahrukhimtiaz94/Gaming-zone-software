@@ -6,6 +6,9 @@ import { resolve } from 'node:path';
 import { get, all, run, tx, ready } from './storage.js';
 import { describeError, indexConsoleLink } from './errors.js';
 import { synthesizeUrdu } from './firebase/speech.js';
+import {createAgent,createGeminiClient} from './assistant/gemini.js';
+import {zoneTools,supportedActions} from './assistant/tools.js';
+const chatAgent=createAgent({generate:createGeminiClient(),execute:zoneTools});
 const root=fileURLToPath(new URL('.',import.meta.url));
 const now=()=>Date.now();
 const log=(actor,action)=>run('INSERT INTO audit(time,actor,action) VALUES(?,?,?)',now(),actor,action);
@@ -20,7 +23,7 @@ const secureCookie=()=>process.env.COOKIE_SECURE==='1'||Boolean(process.env.VERC
 export default async function handler(req,res){try{
 res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');
 const url=new URL(req.url,'http://localhost');
-if(!url.pathname.startsWith('/api/')){const file={'/':'index.html','/app.js':'app.js','/voice.js':'voice.js','/voice-dialogue.js':'voice-dialogue.js','/style.css':'style.css'}[url.pathname];if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');return res.end(readFileSync(`${root}public/${file}`));}
+if(!url.pathname.startsWith('/api/')){const file={'/':'index.html','/app.js':'app.js','/voice.js':'voice.js','/ai-agent.js':'ai-agent.js','/voice-dialogue.js':'voice-dialogue.js','/style.css':'style.css'}[url.pathname];if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');return res.end(readFileSync(`${root}public/${file}`));}
 let body={};
 if(req.method==='POST'){
  if(req.headers.origin&&req.headers.origin!==`${req.headers['x-forwarded-proto']==='https'?'https':'http'}://${req.headers.host}`)fail('Invalid origin',403);
@@ -85,6 +88,35 @@ if(route==='/api/state'){
  return respond(res,200,{devices:snapshots,requests:await all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC"),sessions:await all('SELECT sessions.*,users.name AS staff,devices.name AS device FROM sessions JOIN users ON users.id=approved_by JOIN devices ON devices.id=device_id ORDER BY sessions.start DESC,sessions.id DESC LIMIT 5000'),audit:u.role==='owner'?await all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'):[]});
 }
 if(req.method!=='POST')fail('Not found',404);
+if(route==='/api/assistant/chat'){
+ if(!process.env.GEMINI_API_KEY)throw Object.assign(new Error('Real AI agent ke liye Vercel mein GEMINI_API_KEY securely add karein. Key chat mein share na karein.'),{status:503,expose:true,code:'AI_NOT_CONFIGURED'});
+ if(typeof body.message!=='string'||body.message.length>1200||!body.message.trim())fail('AI sawal 1–1200 characters rakhein');
+ await tx(async()=>{
+  const identity=`assistant:${u.id}`,a=await get('SELECT * FROM login_attempts WHERE identity=?',identity);
+  if(!a){await run('INSERT INTO login_attempts(identity,attempts,window_start) VALUES(?,?,?)',identity,1,now());return;}
+  if(now()-a.window_start>600000){await run('UPDATE login_attempts SET attempts=1,window_start=? WHERE identity=?',now(),identity);return;}
+  if(a.attempts>=30)fail('AI limit poori ho gayi. 10 minutes baad try karein; manual dashboard available hai.',429);
+  await run('UPDATE login_attempts SET attempts=attempts+1 WHERE identity=?',identity);
+ });
+ return respond(res,200,await chatAgent({message:body.message,history:body.history||[],user:{id:u.id,name:u.name,role:u.role}}));
+}
+if(route==='/api/assistant/confirm'){
+ if(typeof body.id!=='string'||!/^[a-f0-9]{48}$/.test(body.id))fail('Action ID valid nahi',400);
+ const result=await tx(async()=>{
+  const proposed=await get('SELECT * FROM assistant_actions WHERE id=?',body.id);
+  if(!proposed||proposed.user_id!==u.id)fail('Action aapke account ki nahi ya available nahi',403);
+  if(proposed.consumed||proposed.expires<=now())fail('Action expire ya pehle apply ho chuki. AI se naya action poochein.',409);
+  if(!supportedActions.has(proposed.action))fail('Action allowed nahi',403);
+  if(proposed.action==='pay'&&u.role!=='owner')fail('Owner only',403);
+  let status=0,captured;
+  await handler({url:'/api/'+proposed.action,method:'POST',headers:req.headers,socket:req.socket,body:JSON.parse(proposed.payload)}, {setHeader(){},writeHead(code){status=code;},end(text){captured=JSON.parse(text);}});
+  if(status<200||status>=300)throw Object.assign(new Error(captured?.error||'Action failed'),{status:status||503,expose:true});
+  await run('UPDATE assistant_actions SET consumed=1 WHERE id=?',proposed.id);
+  await log(u.name,`AI action confirmed by staff button: ${proposed.action}`);
+  return {ok:true,action:proposed.action,result:captured,message:proposed.action==='request'?'Pending booking request save ho gayi. Staff approval abhi baqi hai.':'Action server par apply ho gayi. Dashboard status check karein; device delivery alag hai.'};
+ });
+ return respond(res,200,result);
+}
 if(route==='/api/voice/speak'){
  if(process.env.VOICE_PROVIDER!=='google')throw Object.assign(new Error('Natural Urdu female voice ke liye Google Text-to-Speech API aur VOICE_PROVIDER=google configure karein.'),{status:503,expose:true,code:'TTS_NOT_CONFIGURED'});
  if(typeof body.text!=='string'||!body.text.trim()||Buffer.byteLength(body.text,'utf8')>4000)fail('Voice text 1 se 4000 bytes rakhein');

@@ -47,7 +47,7 @@ export class VoiceAssistant{
   if(!this.speech||!this.Utterance)return;
   const voices=this.speech.getVoices(),selected=voices.find(v=>v.name===this.voiceName());
   const desired=this.language().split('-')[0];
-  const voice=selected||voices.find(v=>v.lang.toLowerCase().startsWith(desired))||voices.find(v=>v.lang.toLowerCase().startsWith('en'));
+  const voice=selected||voices.find(v=>v.lang.toLowerCase().startsWith(desired))||(desired==='ur'?voices.find(v=>v.lang.toLowerCase().startsWith('hi')):null)||voices.find(v=>v.lang.toLowerCase().startsWith('en'));
   const family=voice?.lang?.slice(0,2).toLowerCase()||'en';
   const text=step.speech[family]||step.speech.en;
   await new Promise(resolve=>{
@@ -69,7 +69,7 @@ export class VoiceAssistant{
  listenFor(turn){
   if(!this.active||turn!==this.turn||this.submitting)return;
   const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=false;recognition.interimResults=false;let heard=false;
-  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.abortRecognition();this.onMessage('you',text);const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
+  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.abortRecognition();this.onMessage('you',text);if(this.handleTranscript){void this.handleTranscript(text);return;}const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
   recognition.onerror=e=>{if(turn!==this.turn)return;heard=true;this.abortRecognition();this.onStatus(e.error==='not-allowed'?'Microphone permission dein; phir dobara Talk to assistant dabayein.':'Awaaz nahi samajh aayi ya voice service unavailable. Dobara suno button dabayein, ya form use karein.');};
   recognition.onend=()=>{if(turn===this.turn&&!heard){this.recognition=null;this.onStatus('Kuch suna nahi. Dobara suno button dabayein.');}};
   this.onStatus('Sun raha hoon…');try{recognition.start();}catch{this.onStatus('Microphone busy hai. Dobara suno button dabayein.');}
