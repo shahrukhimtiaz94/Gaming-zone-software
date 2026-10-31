@@ -11,7 +11,7 @@ export class VoiceAssistant{
  }
  async preview(){
   if(this.submitting)return;this.stop();this.cloudUnavailable=false;const turn=++this.turn;
-  const step={message:'Urdu female voice sample. Cloud service configured na ho to browser fallback sunai degi.',speech:{ur:'السلام علیکم! میں آپ کی گیمنگ اسسٹنٹ ہوں۔ بتائیے، کون سا پی سی بک کرنا ہے؟',en:'Hello! I am your gaming assistant. Which PC would you like to book?',hi:'नमस्ते! मैं आपकी गेमिंग असिस्टेंट हूँ। कौन सा पीसी बुक करना है?'}};
+  const step={message:'Browser voice sample. Awaaz aapke system ki available voices se hai.',speech:{ur:'السلام علیکم! میں آپ کی گیمنگ اسسٹنٹ ہوں۔ بتائیے، کون سا پی سی بک کرنا ہے؟',en:'Hello! I am your gaming assistant. Which PC would you like to book?',hi:'नमस्ते! मैं आपकी गेमिंग असिस्टेंट हूँ। कौन सा पीसी बुक करना है?'}};
   this.onMessage('assistant',step.message);this.onStatus('Voice sample chal raha hai…');
   try{await this.speak(step,turn);}catch{this.onStatus('Voice sample nahi chal saka. Browser ki sound permission check karein.');return;}
   if(turn===this.turn)this.onStatus('Sample complete. Booking ke liye Talk to assistant dabayein.');

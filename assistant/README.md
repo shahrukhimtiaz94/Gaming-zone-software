@@ -42,3 +42,9 @@ The server limits chat to 30 user turns per account per ten-minute window, three
 Tests use mocked model responses for tool selection, multi-language reply formatting, unknown tool denial, secret redaction, model discovery and quota handling. Actual database tests cover card preparation, authenticated ownership, one-use confirmation, stale extension refusal and owner-only payment access. Chromium tests with simulated model/audio exercise the actual UI and API. Native Firestore transaction tests use the official local emulator.
 
 The live Gemini key/model, provider quota, microphone and actual voice quality have not been verified from this workspace. After deployment, test a read-only question first, then prepare one spare-PC booking card and inspect it before confirming. The basic booking mode/manual dashboard remain available if the AI service is unavailable.
+
+## Connection diagnosis
+
+Click **Check AI connection** for a short typed greeting without microphone input. If the API fails, its message now distinguishes invalid keys (AI_KEY_INVALID), authentication (AI_AUTH_FAILED), project API access (AI_API_DISABLED), key restrictions (AI_KEY_RESTRICTED), model-not-found (AI_MODEL_NOT_FOUND), quota, region, timeout, network and provider HTTP errors. It does not print or return Google's raw error body or your key. AQ-prefixed keys are not rejected solely for their prefix. API keys must be copied as values without surrounding quotes, newlines or Bearer prefixes; Live API ephemeral tokens are not accepted for generateContent.
+
+A configured key and redeploy alone do not establish that Google accepted that key/model. Verify the connection test before trying a data/action question. Report the displayed error code/reference if it still fails; never share the full key.

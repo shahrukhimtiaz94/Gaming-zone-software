@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {chooseModel,createAgent,createGeminiClient} from '../assistant/gemini.js';
+import {chooseModel,createAgent,createGeminiClient,modelFailure} from '../assistant/gemini.js';
 const answer={reply:'PC 5 free hai.',speech:{ur:'پی سی پانچ خالی ہے۔',hi:'पीसी पांच खाली है।',en:'PC five is available.'}};
 const final=value=>({candidates:[{content:{role:'model',parts:[{text:JSON.stringify(value)}]}}]});
 const call=(name,args={})=>({candidates:[{content:{role:'model',parts:[{functionCall:{name,args},thoughtSignature:'opaque-provider-signature'}]}}]});
@@ -30,4 +30,25 @@ test('missing key and free-tier quota failure are explicit; no automatic paid re
  const noKey=createGeminiClient({key:()=>''});await assert.rejects(noKey({}),e=>e.code==='AI_NOT_CONFIGURED');
  let calls=0;const quota=createGeminiClient({key:()=> 'test-only',configuredModel:()=> 'gemini-2.5-flash',fetcher:async()=>{calls++;return {ok:false,status:429};}});
  await assert.rejects(quota({}),e=>e.code==='AI_QUOTA_EXCEEDED');assert.equal(calls,1);
+});
+
+test('provider failures distinguish authentication, restrictions, model and overload without leaking raw errors',()=>{
+ assert.equal(modelFailure(401).code,'AI_AUTH_FAILED');
+ assert.equal(modelFailure(404).code,'AI_MODEL_NOT_FOUND');
+ assert.equal(modelFailure(503).code,'AI_PROVIDER_UNAVAILABLE');
+ const invalid=modelFailure(400,{error:{message:'API key not valid: SECRET_VALUE',details:[{reason:'API_KEY_INVALID'}]}});assert.equal(invalid.code,'AI_KEY_INVALID');assert.ok(!invalid.message.includes('SECRET_VALUE'));
+ assert.equal(modelFailure(403,{error:{details:[{reason:'API_KEY_HTTP_REFERRER_BLOCKED'}]}}).code,'AI_KEY_RESTRICTED');
+ assert.equal(modelFailure(403,{error:{details:[{reason:'SERVICE_DISABLED'}]}}).code,'AI_API_DISABLED');
+});
+test('AQ prefix is accepted; ephemeral token and copied quotes are rejected safely',async()=>{
+ for(const value of ['auth_tokens/test-only','"AQ.test-only"','Bearer AQ.test-only']){
+  const client=createGeminiClient({key:()=>value,fetcher:async()=>{throw Error('Must not send malformed credentials');}});await assert.rejects(client({}),e=>['AI_KEY_EPHEMERAL','AI_KEY_FORMAT'].includes(e.code));
+ }
+ const client=createGeminiClient({key:()=> 'AQ.test-only',configuredModel:()=> 'gemini-2.5-flash',fetcher:async()=>({ok:false,status:401,json:async()=>({error:{message:'raw secret reflection',status:'UNAUTHENTICATED'}})})});
+ await assert.rejects(client({}),e=>e.code==='AI_AUTH_FAILED'&&!e.message.includes('raw secret reflection'));
+});
+test('transport errors and timeouts do not masquerade as provider HTTP status',async()=>{
+ const client=createGeminiClient({key:()=> 'AQ.test-only',configuredModel:()=> 'gemini-2.5-flash',fetcher:async()=>{throw Error('secret-network-detail');}});
+ await assert.rejects(client({}),e=>e.code==='AI_NETWORK_ERROR'&&!e.message.includes('secret-network-detail'));
+ const signal=AbortSignal.abort();await assert.rejects(client({},signal),e=>e.code==='AI_TIMEOUT');
 });

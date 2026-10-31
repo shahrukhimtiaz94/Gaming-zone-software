@@ -60,7 +60,9 @@ The official emulator does not enforce missing composite indexes. To exercise th
 
 API errors now distinguish missing indexes, denied server permissions and missing databases where the provider supplies a known error code. Unexpected failures retain a generic message and include a reference that can be matched in Vercel Runtime Logs. Raw error messages/credentials are not sent to the browser or logs; index-specific Firebase Console URLs can be logged to help configure the index.
 
-## Natural Urdu female voice (Google Cloud)
+## Optional server-side cloud voice connector (not needed for the free dashboard)
+
+The current dashboard lists only free browser/system voices, as requested by the user. The earlier cloud connector remains in server code, but its setup below is optional developer reference; do not enable billing for the current free UI.
 
 The voice assistant can synthesize Urdu audio with Google's Cloud Text-to-Speech using the **same server-side service account** already configured for Firebase. No private key belongs in browser code. This voice service is separate from Firestore and is not enabled just by installing Firebase.
 
@@ -68,7 +70,7 @@ The voice assistant can synthesize Urdu audio with Google's Cloud Text-to-Speech
 2. Link/enable Google Cloud billing if required. Synthesis can incur charges according to the selected voice model and usage; check pricing and budget alerts in your project. No billing/API changes were performed by the agent.
 3. Ensure the existing service account is authorized to use the API in that project. If access is denied, inspect its IAM/service usage permissions rather than creating or pasting another key into chat.
 4. In Vercel Production Environment Variables add `VOICE_PROVIDER=google` and redeploy. Keep the existing Firebase credential variables. The backend obtains a scoped OAuth token from those credentials and never returns it to the browser.
-5. Select **Urdu female — Google Cloud** in the dashboard and click **Awaaz sunain**. Urdu speech recognition is selected by default. If your browser blocks audio, enable sound for the site and click again.
+5. Cloud playback would require explicitly opting the UI back into the server connector. The current Awaaz sunain button previews free system voices only. If your browser blocks audio, enable sound for the site and click again.
 
 The backend lists available Urdu voices, filters on the provider's FEMALE gender metadata, and prefers Chirp/Neural/WaveNet models over Standard. Availability and quality depend on Google's current Urdu voice inventory; the app does not promise a particular voice model. An optional `URDU_VOICE_NAME` selects an exact available FEMALE Urdu voice. If no eligible voice exists, it reports that clearly.
 

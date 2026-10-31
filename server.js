@@ -174,7 +174,7 @@ if(route==='/api/request'){
  await tx(async()=>{if(await get('SELECT id FROM users WHERE name=?',name))fail('Ye naam pehle se use ho raha hai',409);await credentials(name,body.password,'staff');await log(u.name,`Staff account created: ${name}`);});
 }else fail('Not found',404);
 respond(res,200,{ok:true});
-}catch(e){const problem=describeError(e);const reference=randomBytes(6).toString('hex');respond(res,problem.status,{error:problem.error,...(problem.code?{code:problem.code,reference}:{})});if(!e.expose)console.error('Request failed:',JSON.stringify({reference,code:e.code||e.name,route:new URL(req.url,'http://localhost').pathname,indexUrl:indexConsoleLink(e)}));}}
+}catch(e){const problem=describeError(e);const reference=randomBytes(6).toString('hex');respond(res,problem.status,{error:problem.error,...(problem.code?{code:problem.code,reference}:{})});if(!e.expose||problem.status>=500)console.error('Request failed:',JSON.stringify({reference,code:e.code||e.name,route:new URL(req.url,'http://localhost').pathname,indexUrl:indexConsoleLink(e)}));}}
 
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
  await ready();
