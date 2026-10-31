@@ -1,0 +1,68 @@
+import {VoiceBookingDialogue} from './voice-dialogue.js';
+
+export class VoiceAssistant{
+ constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
+  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,language,voiceName,speech,Recognition,Utterance});this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
+ }
+ abortRecognition(){if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
+ stopSpeech(){if(this.speechTimer)clearTimeout(this.speechTimer);this.finishSpeech?.();this.finishSpeech=null;this.speech?.cancel();}
+ stop(message='Voice band hai. Nayi request ke liye Talk to assistant dabayein.'){
+  this.turn++;this.active=false;this.abortRecognition();this.stopSpeech();this.onStatus(message);return !this.submitting;
+ }
+ async start(){
+  if(this.submitting)return;
+  this.stop('Stations check ho rahe hain…');const turn=this.turn;
+  if(!this.Recognition){this.onStatus('Is browser mein speech recognition supported nahi. Chrome/Edge mein kholein ya form use karein.');return;}
+  try{const devices=await this.getDevices();if(turn!==this.turn)return;this.dialogue=new VoiceBookingDialogue(devices);this.active=true;await this.present(this.dialogue.start());}
+  catch{if(turn===this.turn)this.onStatus('Stations load nahi hue. Connection check karein aur dobara button dabayein.');}
+ }
+ async speak(step,turn){
+  if(!this.speech||!this.Utterance)return;
+  const voices=this.speech.getVoices(),selected=voices.find(v=>v.name===this.voiceName());
+  const desired=this.language().split('-')[0];
+  const voice=selected||voices.find(v=>v.lang.toLowerCase().startsWith(desired))||voices.find(v=>v.lang.toLowerCase().startsWith('en'));
+  const family=voice?.lang?.slice(0,2).toLowerCase()||'en';
+  const text=step.speech[family]||step.speech.en;
+  await new Promise(resolve=>{
+   let finished=false;
+   const finish=()=>{if(finished)return;finished=true;clearTimeout(this.speechTimer);this.finishSpeech=null;resolve();};this.finishSpeech=finish;
+   const utterance=new this.Utterance(text);utterance.lang=voice?.lang||'en-GB';if(voice)utterance.voice=voice;utterance.rate=0.95;
+   utterance.onend=finish;utterance.onerror=finish;this.speechTimer=setTimeout(finish,30000);
+   if(turn!==this.turn){finish();return;}this.speech.speak(utterance);
+  });
+ }
+ async present(step){
+  if(!step)return;const turn=++this.turn;this.abortRecognition();this.stopSpeech();
+  this.onMessage('assistant',step.message);this.onFields({...this.dialogue.draft});this.onStatus('Assistant bol raha hai…');
+  await this.speak(step,turn);if(turn!==this.turn||!this.active)return;
+  if(step.action==='done'){this.active=false;this.onStatus('Voice complete. Staff approval alag zaroori hai.');return;}
+  this.listenFor(turn);
+ }
+ listen(){if(!this.active||this.submitting)return;const turn=++this.turn;this.abortRecognition();this.stopSpeech();this.listenFor(turn);}
+ listenFor(turn){
+  if(!this.active||turn!==this.turn||this.submitting)return;
+  const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=false;recognition.interimResults=false;let heard=false;
+  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.abortRecognition();this.onMessage('you',text);const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
+  recognition.onerror=e=>{if(turn!==this.turn)return;heard=true;this.abortRecognition();this.onStatus(e.error==='not-allowed'?'Microphone permission dein; phir dobara Talk to assistant dabayein.':'Awaaz nahi samajh aayi ya voice service unavailable. Dobara suno button dabayein, ya form use karein.');};
+  recognition.onend=()=>{if(turn===this.turn&&!heard){this.recognition=null;this.onStatus('Kuch suna nahi. Dobara suno button dabayein.');}};
+  this.onStatus('Sun raha hoon…');try{recognition.start();}catch{this.onStatus('Microphone busy hai. Dobara suno button dabayein.');}
+ }
+ async submit(step){
+  if(this.submitting)return;this.submitting=true;this.abortRecognition();const turn=++this.turn;this.onSubmitting(true);this.onStatus('Request save ho rahi hai…');
+  try{
+   const devices=await this.getDevices();
+   // Cancellation before the network write really prevents submission.
+   if(!this.active||turn!==this.turn)return;
+   const device=devices.find(d=>d.id===step.draft.device);
+   if(!device||device.session||device.rate!==step.rate){
+    this.dialogue.devices=devices;this.dialogue.phase='confirm';this.submitting=false;this.onSubmitting(false);await this.present(this.dialogue.next());return;
+   }
+   await this.createRequest({...step.draft});
+   // Never claim success until the authenticated server has saved the request.
+   if(this.active&&turn===this.turn)await this.present(this.dialogue.saved());
+   else this.onMessage('assistant','Request server par save ho gayi. Awaiting approval list check karein.');
+  }catch(e){
+   this.dialogue.phase='done';this.active=false;this.onStatus('Request ki tasdeeq nahi hui. Awaiting approval list check karein; automatic retry nahi ki gayi.');this.onMessage('assistant',e.message||'Request save nahi ho saki.');
+  }finally{this.submitting=false;this.onSubmitting(false);}
+ }
+}
