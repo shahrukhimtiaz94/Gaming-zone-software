@@ -1,8 +1,9 @@
+import {readApiResponse} from './api-response.js';
 import {VoiceAssistant} from './voice.js';
 import {AIChatAssistant} from './ai-agent.js';
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state,user,tab='live',refreshPending=null,pollBackoffUntil=0,lastHistoryRefresh=0;
-async function api(path,data,signal,keepalive=false){const r=await fetch('/api/'+path,{...(data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{}),...(signal?{signal}:{}),...(keepalive?{keepalive:true}:{})});const v=await r.json();if(!r.ok)throw Object.assign(new Error([v.error,v.code?'('+v.code+')':'',v.reference?'Ref: '+v.reference:''].filter(Boolean).join(' ')),{code:v.code,status:r.status});return v;}
+async function api(path,data,signal,keepalive=false){const r=await fetch('/api/'+path,{...(data?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}:{}),...(signal?{signal}:{}),...(keepalive?{keepalive:true}:{})});return readApiResponse(r);}
 function error(e){$('#error').textContent=e.message;}
 const remainingBill=s=>Math.max(0,bill(s)-(s.paid_amount||0));
 const money=n=>'Rs '+Math.round(n).toLocaleString(),hours=n=>(n/3600000).toFixed(1)+'h',bill=s=>(s.end-s.start)/3600000*s.rate;
