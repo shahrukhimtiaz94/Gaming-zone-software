@@ -19,7 +19,7 @@ Gemini free-tier availability, quotas, eligible models, regional restrictions an
 - Look up recent customer session history. Owner-only audit entries remain owner-only.
 - Prepare booking, approval, extension, stop, payment-marking and reject action cards. It asks for missing details before proposing a booking.
 
-For example: “Aaj kitne PCs chal rahe hain?”, “Ali ne kitna time khela?”, “Pichlay haftay ki earning batao”, “PC 5 Ahmed ke liye do ghante book kar do”, or “PC 3 ka aadha ghanta barhao”. Follow-up conversation is retained for eight text turns in the page's memory, not browser localStorage. It is not a wake-word background assistant and does not retain conversations across reload/logout.
+For example: “Aaj kitne PCs chal rahe hain?”, “Ali ne kitna time khela?”, “Pichlay haftay ki earning batao”, “PC 5 Ahmed ke liye do ghante book kar do”, or “PC 3 ka aadha ghanta barhao”. Follow-up conversation is retained for eight text turns in the page's memory, not browser localStorage. An opt-in foreground browser wake-word mode is available; conversation context is not retained across reload/logout.
 
 ## Action authority
 
@@ -50,3 +50,15 @@ Click **Check AI connection** for a short typed greeting without microphone inpu
 A configured key and redeploy alone do not establish that Google accepted that key/model. Verify the connection test before trying a data/action question. Report the displayed error code/reference if it still fails; never share the full key.
 
 A Google HTTP 503 indicates provider-side unavailability, not an instruction to rotate keys or enable billing. The app now displays the selected model on a persistent 5xx response. If GEMINI_MODEL is explicitly set, it remains authoritative; clear it to use available stable Flash-Lite discovery. If 503 persists after the bounded retry, test the same supported model in AI Studio and retry later. This workspace cannot establish the health of your live model from mocked retry tests.
+
+## Hands-free conversations
+
+Set the assistant name (default **Nexus**) and click **Hands-free on karein** once to allow microphone access. The chosen name alone is stored locally in this browser; the mic-enable state and conversation are not restored automatically. Say “Nexus, aaj ki earning batao” or just “Nexus” to wake the assistant. Its next turns do not require the wake name again. Silent recognition endings and no-speech events re-arm the listening turn automatically instead of requiring another click.
+
+Say **“OK thanks”** (also “okay thanks”, “اوکے تھینکس”, “ओके थैंक्स”) while it is listening to pause the conversation and return to wake-name detection. The recent conversation context stays in memory. Say the name again to resume. **Stop voice** or the hands-free off button disables the microphone and all queued restarts. Logout, page exit, changing mode/language/name or backgrounding the tab also disables listening. Permission/device failures stop immediately; repeated network/recognition errors stop after three failures, rather than looping forever.
+
+The browser speech-recognition service produces the text that is matched against the wake word. This is **not guaranteed on-device/offline wake detection**: the browser vendor may process microphone audio online even while waiting for the name. Speech before a wake-name match is not added to the app transcript or sent to Gemini. An explicit mic indicator is shown. Wake detection pauses during assistant speech/processing so it does not intentionally hear its own voice. There is no voice interruption/barge-in while a reply plays; the Stop button remains available.
+
+Browser/OS restrictions, sleeping devices and background tabs can interrupt listening. Keep the dashboard tab visible, and re-enable after returning from the background. This is not a native always-on Windows assistant and cannot hear after the browser closes. A shared room can produce false wakeups; no wake phrase authenticates a customer/staff member or removes staff confirmation requirements.
+
+Controller tests cover ignored ambient text, name aliases and word boundaries, multi-turn wake/listen cycles, silence recovery, OK thanks, microphone denial, bounded network retries and complete Stop cancellation. Chromium smoke tests exercise the UI with simulated speech/model/audio; actual microphones, wake accuracy and long-running recognition still need testing on the owner's Windows browser.

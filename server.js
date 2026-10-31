@@ -23,7 +23,7 @@ const secureCookie=()=>process.env.COOKIE_SECURE==='1'||Boolean(process.env.VERC
 export default async function handler(req,res){try{
 res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Frame-Options','DENY');res.setHeader('Referrer-Policy','same-origin');
 const url=new URL(req.url,'http://localhost');
-if(!url.pathname.startsWith('/api/')){const file={'/':'index.html','/app.js':'app.js','/voice.js':'voice.js','/ai-agent.js':'ai-agent.js','/voice-dialogue.js':'voice-dialogue.js','/style.css':'style.css'}[url.pathname];if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');return res.end(readFileSync(`${root}public/${file}`));}
+if(!url.pathname.startsWith('/api/')){const file={'/':'index.html','/app.js':'app.js','/voice.js':'voice.js','/wake-word.js':'wake-word.js','/ai-agent.js':'ai-agent.js','/voice-dialogue.js':'voice-dialogue.js','/style.css':'style.css'}[url.pathname];if(!file){res.writeHead(404);return res.end();}res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');return res.end(readFileSync(`${root}public/${file}`));}
 let body={};
 if(req.method==='POST'){
  if(req.headers.origin&&req.headers.origin!==`${req.headers['x-forwarded-proto']==='https'?'https':'http'}://${req.headers.host}`)fail('Invalid origin',403);

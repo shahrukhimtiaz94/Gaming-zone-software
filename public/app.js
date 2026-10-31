@@ -34,6 +34,8 @@ const voiceOptions={
  onMessage:(role,text)=>{const row=document.createElement('p');const label=document.createElement('strong');label.textContent=role==='you'?'You: ':'Assistant: ';row.append(label,document.createTextNode(text));$('#voiceLog').append(row);while($('#voiceLog').children.length>12)$('#voiceLog').firstElementChild.remove();row.scrollIntoView({block:'nearest'});},
  onStatus:text=>{$('#voiceNote').textContent=text;$('#voice').setAttribute('aria-pressed',String(assistant.active));},
  onSubmitting:busy=>{$('#booking button').disabled=busy;$('#voice').disabled=busy;$('#voiceRetry').disabled=busy;$('#voicePreview').disabled=busy;$('#aiSend').disabled=busy;$('#aiCheck').disabled=busy;},
+ onHandsFree:enabled=>{$('#handsFree').setAttribute('aria-pressed',String(enabled));$('#handsFree').textContent=enabled?'⏹ Hands-free off karein':'🎙 Hands-free on karein';$('#handsFreeState').textContent=enabled?'Mic enabled: naam lene par conversation shuru; OK thanks par wake-word ka intezar.':'Hands-free off. Microphone band hai.';},
+ wakeWord:()=>$('#wakeName').value.trim()||'Nexus',
  language:()=>$('#voiceLanguage').value,voiceName:()=>$('#voiceChoice').value
 };
 const bookingAssistant=new VoiceAssistant(voiceOptions);
@@ -45,11 +47,18 @@ $('#assistantMode').onchange=()=>{assistant.stop();assistant=$('#assistantMode')
 $('#aiChat').onsubmit=async e=>{e.preventDefault();const input=$('#aiMessage'),text=input.value.trim();if(!text||aiAssistant.submitting)return;input.value='';await aiAssistant.send(text);};
 $('#aiCheck').onclick=async()=>{assistant.stop();await aiAssistant.send('Hello. Connection test: reply briefly in Roman Urdu with the required speech translations. Do not use any tools or prepare actions.');};
 $('#aiClear').onclick=()=>{aiAssistant.clear();$('#voiceLog').replaceChildren();};
-document.addEventListener('click',async e=>{const button=e.target.closest('[data-ai-confirm]');if(!button)return;assistant.stop();if(!confirm(button.dataset.summary+'\nIs action ko ab apply karein?'))return;button.disabled=true;try{const result=await api('assistant/confirm',{id:button.dataset.aiConfirm});button.closest('.request').remove();await refresh();await aiAssistant.confirmed(result);}catch(e){error(e);button.disabled=false;}});
+document.addEventListener('click',async e=>{const button=e.target.closest('[data-ai-confirm]');if(!button)return;const wasActive=assistant.active,resumeConversation=wasActive||assistant.handsFreeEnabled;assistant.stop(undefined,true);if(!confirm(button.dataset.summary+'\nIs action ko ab apply karein?')){if(resumeConversation){assistant.active=true;assistant.listen();}return;}button.disabled=true;try{const result=await api('assistant/confirm',{id:button.dataset.aiConfirm});button.closest('.request').remove();await refresh();await aiAssistant.confirmed(result,assistant===aiAssistant&&resumeConversation);if(assistant!==aiAssistant){if(wasActive){assistant.active=true;assistant.listen();}else if(assistant.handsFreeEnabled)assistant.queueListening(assistant.turn,'wake');}}catch(e){error(e);button.disabled=false;if(resumeConversation){assistant.active=true;assistant.listen();}}});
 
+$('#handsFree').onclick=()=>{if(assistant.handsFreeEnabled)assistant.stop();else assistant.enableHandsFree();};
+$('#wakeName').onchange=()=>{assistant.stop('Naam badal gaya. Hands-free dobara on karein.');try{localStorage.setItem('nexusWakeName',$('#wakeName').value.trim());}catch{}};
+try{const saved=localStorage.getItem('nexusWakeName');if(saved&&saved.length<=30)$('#wakeName').value=saved;}catch{}
 $('#voice').onclick=()=>assistant.start();$('#voicePreview').onclick=()=>assistant.preview();$('#voiceRetry').onclick=()=>assistant.listen();$('#voiceStop').onclick=()=>assistant.stop();
 $('#voiceLanguage').onchange=()=>assistant.stop('Zaban badal gayi. Talk to assistant se dobara shuru karein.');
 $('#voiceChoice').onchange=()=>assistant.stop('Voice badal gayi. Talk to assistant se dobara shuru karein.');
 $('#booking').addEventListener('input',e=>{if(e.isTrusted&&assistant.active)assistant.stop('Form manually change hua. Voice band hai; form submit karein ya assistant dobara shuru karein.');});
 function loadVoices(){const selected=$('#voiceChoice').value;$('#voiceChoice').replaceChildren(new Option('Free browser / system voice',''));for(const voice of window.speechSynthesis?.getVoices()||[])$('#voiceChoice').add(new Option(`${voice.name} (${voice.lang})`,voice.name));if(selected)$('#voiceChoice').value=selected;}
 loadVoices();window.speechSynthesis?.addEventListener('voiceschanged',loadVoices);
+
+function pauseHiddenMicrophone(){if(document.hidden){bookingAssistant.stop('Tab background mein hai. Mic band hai; wapas aakar hands-free dobara enable karein.');aiAssistant.stop('Tab background mein hai. Mic band hai; wapas aakar hands-free dobara enable karein.');}}
+document.addEventListener('visibilitychange',pauseHiddenMicrophone);
+window.addEventListener('pagehide',()=>{bookingAssistant.stop();aiAssistant.stop();});

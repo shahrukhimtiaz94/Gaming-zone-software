@@ -62,3 +62,7 @@ Click **Talk to assistant** and allow the microphone. Say “PC number five for 
 Voice never calls approval, unlock, payment, discount or free-session endpoints. Availability/rate are rechecked before writing; price changes require a new confirmation. If a request result is uncertain, the assistant does not retry automatically; inspect the pending list. Once the server write has been sent, stopping the microphone cannot undo it. Browser audio, recognition accuracy and voice quality depend on installed voices/device settings; an online multiplayer game does not pause when Windows disconnects.
 
 Voice parser/dialogue/controller tests cover English/Urdu/Hindi numbers, name prompts, confirmation, cancellation, busy station checks, duplicate confirmations, and server-save failure. A Chromium UI smoke check with simulated microphone/voice APIs exercised the actual page and backend and saved exactly one pending request without activating a session. Physical microphone/audio have not been verified in this cloud environment.
+
+## Hands-free mode
+
+Choose a name such as Nexus, click Hands-free on karein once and allow the microphone. Say its name to begin; conversation continues across replies and silence. Say **OK thanks** to return to waiting for the name. Stop voice turns the mic fully off. Keep the tab visible; background/sleep/browser shutdown cannot provide reliable always-on listening. See the [hands-free guide](assistant/README.md#hands-free-conversations) for privacy, browser limitations and recovery.

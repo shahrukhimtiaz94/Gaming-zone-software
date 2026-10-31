@@ -1,13 +1,66 @@
 import {VoiceBookingDialogue} from './voice-dialogue.js';
+import {wakeCommand,endsConversation} from './wake-word.js';
 
 export class VoiceAssistant{
- constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
-  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
+ constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree=()=>{},wakeWord=()=> 'Nexus',continuousConversation=false,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
+  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree,wakeWord,continuousConversation,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.handsFreeEnabled=false;this.recognitionFailures=0;this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
  }
- abortRecognition(){if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
+ abortRecognition(){clearTimeout(this.restartTimer);this.restartTimer=null;if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
  stopSpeech(){this.audioAbort?.abort();this.audioAbort=null;if(this.audio){this.audio.pause();this.audio=null;}if(this.audioUrl){URL.revokeObjectURL(this.audioUrl);this.audioUrl=null;}if(this.speechTimer)clearTimeout(this.speechTimer);this.finishSpeech?.();this.finishSpeech=null;this.speech?.cancel();}
- stop(message='Voice band hai. Nayi request ke liye Talk to assistant dabayein.'){
+ stop(message='Voice band hai. Nayi request ke liye Talk to assistant dabayein.',preserveHandsFree=false){
+  if(!preserveHandsFree){this.handsFreeEnabled=false;this.onHandsFree(false);}
   this.turn++;this.active=false;this.abortRecognition();this.stopSpeech();this.onStatus(message);return !this.submitting;
+ }
+ enableHandsFree(){
+  if(this.submitting){this.onStatus('AI ke jawab ka intezar karein ya Stop voice dabayein.');return;}
+  if(!this.Recognition){this.onStatus('Hands-free speech recognition is browser mein available nahi. Chrome/Edge use karein.');return;}
+  if(wakeCommand(this.wakeWord(),this.wakeWord())===null){this.onStatus('Assistant ka naam 2–30 letters/numbers mein rakhein.');return;}
+  this.stop();this.handsFreeEnabled=true;this.recognitionFailures=0;this.onHandsFree(true);this.listenForWake(this.turn);
+ }
+ sleep(){
+  this.stop('Conversation pause. Naam lene par dobara shuru hogi.',true);
+  if(this.handsFreeEnabled)this.queueListening(this.turn,'wake');
+ }
+ queueListening(turn,mode,delay=600){
+  clearTimeout(this.restartTimer);
+  this.restartTimer=setTimeout(()=>{
+   this.restartTimer=null;if(turn!==this.turn)return;
+   if(mode==='wake'){if(this.handsFreeEnabled&&!this.active&&!this.submitting)this.listenForWake(turn);}
+   else if(this.active&&!this.submitting)this.listenFor(turn);
+  },delay);
+ }
+ recognitionError(error,turn,mode){
+  if(turn!==this.turn)return;this.abortRecognition();
+  if(['not-allowed','service-not-allowed','audio-capture','language-not-supported'].includes(error)){
+   this.stop('Microphone permission/device/language check karein. Hands-free band hai; theek karne ke baad dobara enable karein.');return;
+  }
+  if(error==='no-speech'){this.onStatus(mode==='wake'?`Naam ka intezar: ${this.wakeWord()}`:'Sun raha hoon…');if(mode==='wake'||this.continuousConversation||this.handsFreeEnabled)this.queueListening(turn,mode);return;}
+  if(++this.recognitionFailures>=3){this.stop('Voice service baar baar fail hui. Connection check karke hands-free dobara enable karein.');return;}
+  this.onStatus('Voice service reconnect ho rahi hai…');
+  if(mode==='wake'||this.continuousConversation||this.handsFreeEnabled)this.queueListening(turn,mode,1000*this.recognitionFailures);
+ }
+ listenForWake(turn){
+  if(turn!==this.turn||!this.handsFreeEnabled||this.active||this.submitting)return;
+  this.abortRecognition();const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=true;recognition.interimResults=false;let woke=false;
+  recognition.onresult=event=>{
+   if(turn!==this.turn||woke)return;
+   for(let i=event.resultIndex||0;i<event.results.length;i++){
+    if(event.results[i].isFinal===false)continue;
+    const command=wakeCommand(event.results[i][0].transcript,this.wakeWord());
+    if(command===null)continue;woke=true;this.recognitionFailures=0;this.abortRecognition();void this.wake(command).catch(()=>this.stop('Voice start nahi hui. Hands-free dobara enable karein.'));return;
+   }
+  };
+  recognition.onerror=event=>{woke=true;this.recognitionError(event.error,turn,'wake');};
+  recognition.onend=()=>{if(turn===this.turn&&!woke){this.recognition=null;this.queueListening(turn,'wake');}};
+  this.onStatus(`Hands-free on. "${this.wakeWord()}" ka naam lein.`);
+  try{recognition.start();}catch{this.recognitionError('start-failed',turn,'wake');}
+ }
+ async wake(command){
+  if(endsConversation(command)){this.sleep();return;}
+  await this.start();if(!this.active){if(this.handsFreeEnabled)this.queueListening(this.turn,'wake');return;}if(!command||this.submitting)return;
+  this.abortRecognition();this.onMessage('you',command);
+  if(this.handleTranscript)await this.handleTranscript(command);
+  else{const step=this.dialogue.receive(command);if(step?.action==='submit')await this.submit(step);else await this.present(step);}
  }
  async preview(){
   if(this.submitting)return;this.stop();this.cloudUnavailable=false;const turn=++this.turn;
@@ -18,7 +71,7 @@ export class VoiceAssistant{
  }
  async start(){
   if(this.submitting)return;
-  this.cloudUnavailable=false;this.stop('Stations check ho rahe hain…');const turn=this.turn;
+  this.cloudUnavailable=false;this.stop('Stations check ho rahe hain…',true);const turn=this.turn;
   if(!this.Recognition){this.onStatus('Is browser mein speech recognition supported nahi. Chrome/Edge mein kholein ya form use karein.');return;}
   try{const devices=await this.getDevices();if(turn!==this.turn)return;this.dialogue=new VoiceBookingDialogue(devices);this.active=true;await this.present(this.dialogue.start());}
   catch{if(turn===this.turn)this.onStatus('Stations load nahi hue. Connection check karein aur dobara button dabayein.');}
@@ -61,18 +114,19 @@ export class VoiceAssistant{
  async present(step){
   if(!step)return;const turn=++this.turn;this.abortRecognition();this.stopSpeech();
   this.onMessage('assistant',step.message);this.onFields({...this.dialogue.draft});this.onStatus('Assistant bol raha hai…');
-  await this.speak(step,turn);if(turn!==this.turn||!this.active)return;
-  if(step.action==='done'){this.active=false;this.onStatus('Voice complete. Staff approval alag zaroori hai.');return;}
+  await this.speak(step,turn);if(turn!==this.turn)return;if(!this.active){if(this.handsFreeEnabled)this.queueListening(turn,'wake');return;}
+  if(step.action==='done'){this.active=false;this.onStatus('Voice complete. Staff approval alag zaroori hai.');if(this.handsFreeEnabled)this.queueListening(turn,'wake');return;}
   this.listenFor(turn);
  }
  listen(){if(!this.active||this.submitting)return;const turn=++this.turn;this.abortRecognition();this.stopSpeech();this.listenFor(turn);}
  listenFor(turn){
   if(!this.active||turn!==this.turn||this.submitting)return;
+  this.abortRecognition();
   const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=false;recognition.interimResults=false;let heard=false;
-  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.abortRecognition();this.onMessage('you',text);if(this.handleTranscript){void this.handleTranscript(text);return;}const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
-  recognition.onerror=e=>{if(turn!==this.turn)return;heard=true;this.abortRecognition();this.onStatus(e.error==='not-allowed'?'Microphone permission dein; phir dobara Talk to assistant dabayein.':'Awaaz nahi samajh aayi ya voice service unavailable. Dobara suno button dabayein, ya form use karein.');};
-  recognition.onend=()=>{if(turn===this.turn&&!heard){this.recognition=null;this.onStatus('Kuch suna nahi. Dobara suno button dabayein.');}};
-  this.onStatus('Sun raha hoon…');try{recognition.start();}catch{this.onStatus('Microphone busy hai. Dobara suno button dabayein.');}
+  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.recognitionFailures=0;this.abortRecognition();if(endsConversation(text)){this.onMessage('you',text);this.sleep();return;}this.onMessage('you',text);if(this.handleTranscript){void this.handleTranscript(text);return;}const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
+  recognition.onerror=e=>{if(turn!==this.turn)return;heard=true;this.recognitionError(e.error,turn,'conversation');};
+  recognition.onend=()=>{if(turn===this.turn&&!heard){this.recognition=null;if(this.continuousConversation||this.handsFreeEnabled){this.onStatus('Sun raha hoon…');this.queueListening(turn,'conversation');}else this.onStatus('Kuch suna nahi. Dobara suno button dabayein.');}};
+  this.onStatus('Sun raha hoon…');try{recognition.start();}catch{this.recognitionError('start-failed',turn,'conversation');}
  }
  async submit(step){
   if(this.submitting)return;this.submitting=true;this.abortRecognition();const turn=++this.turn;this.onSubmitting(true);this.onStatus('Request save ho rahi hai…');
