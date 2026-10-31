@@ -13,8 +13,9 @@ test('authenticated booking, authorization, billing and durable history',async()
  const emulator=process.env.NEXUS_TEST_FIRESTORE_EMULATOR;
  if(database){const u=new URL(database);assert.equal(u.hostname,'127.0.0.1');assert.equal(u.pathname,'/nexus_zone_test');testEnv.DATABASE_URL=database;const c=new pg.Client({connectionString:database});await c.connect();await c.query('DROP SCHEMA IF EXISTS nexus_zone CASCADE');await c.end();}
  if(emulator){assert.match(emulator,/^127\.0\.0\.1:\d+$/);assert.ok(!database,'Choose one test backend');testEnv.DATABASE_PROVIDER='firestore';testEnv.FIREBASE_PROJECT_ID='demo-nexus-zone-test';testEnv.FIRESTORE_EMULATOR_HOST=emulator;delete testEnv.GOOGLE_APPLICATION_CREDENTIALS;const r=await fetch(`http://${emulator}/emulator/v1/projects/demo-nexus-zone-test/databases/(default)/documents`,{method:'DELETE'});assert.equal(r.status,200);}
- let proc;
- const start=()=>new Promise((resolve,reject)=>{proc=spawn(process.execPath,['server.js'],{env:{...testEnv,DATA_DIR:dir,PORT:String(port),SETUP_KEY:'test-only-key'}});proc.stderr.on('data',chunk=>{const line=chunk.toString();if(!line.includes('ExperimentalWarning'))process.stderr.write(line);});proc.stdout.once('data',resolve);proc.once('error',reject);proc.once('exit',code=>reject(Error('Server exited '+code)));});
+ let proc,indexFailures=0;
+ if(process.env.NEXUS_TEST_MISSING_INDEX)assert.ok(emulator,'Index failure injection requires emulator');
+ const start=()=>new Promise((resolve,reject)=>{proc=spawn(process.execPath,process.env.NEXUS_TEST_MISSING_INDEX?['--import','./scripts/missing-index-hook.mjs','server.js']:['server.js'],{env:{...testEnv,DATA_DIR:dir,PORT:String(port),SETUP_KEY:'test-only-key'}});proc.stderr.on('data',chunk=>{const line=chunk.toString();indexFailures+=(line.match(/TEST_MISSING_COMPOSITE_INDEX/g)||[]).length;if(!line.includes('ExperimentalWarning')&&!line.includes('TEST_MISSING_COMPOSITE_INDEX'))process.stderr.write(line);});proc.stdout.once('data',resolve);proc.once('error',reject);proc.once('exit',code=>reject(Error('Server exited '+code)));});
  const call=async(path,body,cookie,bearer)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${process.env.NEXUS_TEST_REWRITE?"index?route="+encodeURIComponent(path):path}`,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(bearer?{Authorization:'Bearer '+bearer}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
  try{await start();assert.equal((await call('state')).status,401);assert.equal((await call('setup',{key:'wrong',name:'owner',password:'long-password-123'})).status,403);
  assert.equal((await call('setup',{key:'test-only-key',name:'owner',password:'long-password-123'})).status,200);
@@ -93,6 +94,7 @@ test('authenticated booking, authorization, billing and durable history',async()
  const results=await Promise.all(competing.map(r=>call('approve',{id:r.id},staff)));
  assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
  assert.equal((await call('state',null,owner)).data.sessions.filter(s=>s.device_id===3).length,1);
+ if(process.env.NEXUS_TEST_MISSING_INDEX)assert.ok(indexFailures>=4,'Must actually exercise composite-index fallback');
  assert.equal((await call('logout',{},owner)).status,200);assert.equal((await call('state',null,owner)).status,401);
  }finally{if(proc&&!proc.killed)await new Promise(resolve=>{proc.once('exit',resolve);proc.kill();});rmSync(dir,{recursive:true,force:true});}
 });

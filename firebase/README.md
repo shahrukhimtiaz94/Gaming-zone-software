@@ -28,7 +28,7 @@ npx firebase-tools deploy --only firestore:rules,firestore:indexes --project gam
 
 **Review your existing project's rules first.** This repository's rules deny browser access to the app's `nexus_zone` namespace and grant no access elsewhere. Publishing this entire rules file replaces existing rules, so merge any unrelated application's existing rules before publishing. Broad public allow rules also permit the protected namespace, because Firestore matching grants are additive; do not leave a broad test-mode allow rule in place. The Admin SDK uses IAM and does not rely on browser rules.
 
-Wait for the four composite indexes in firestore.indexes.json to finish building, then redeploy the Vercel project with the environment variables above. Check `/api/status`, create the owner with SETUP_KEY, and test booking → staff approval → time extension → report. Static HTML loading alone does not prove database access.
+Deploy the four composite indexes in firestore.indexes.json for efficient queries, then redeploy the Vercel project with the environment variables above. Check `/api/status`, create the owner with SETUP_KEY, and test booking → staff approval → time extension → report. Static HTML loading alone does not prove database access.
 
 All application data is under `nexus_zone/gaming-zone/<collection>/<id>`. Owner/staff credentials, device keys, approvals and payment mutations continue through the authenticated backend. Browser configuration does not grant Admin access and is not used as a device/staff credential. Analytics has not been enabled.
 
@@ -51,3 +51,11 @@ NEXUS_TEST_FIRESTORE_EMULATOR=127.0.0.1:8085 npm test
 The Firestore workflow test clears only the emulator's fixed demo project and verifies the same booking/authentication/payment/extension/key-revocation workflow and persistence across app restart. A real production project and non-loopback emulator addresses are rejected. Never set FIRESTORE_EMULATOR_HOST on Vercel.
 
 The web helper client.js uses npm imports and is not served as an unbundled browser script. Admin code stays server-side. Neither Firebase credentials nor emulator success establishes that your deployed service account, indexes and security rules have been configured correctly; validate those in your own project before live customer use.
+
+### Missing-index recovery
+
+If a composite index is missing or still building, the backend retries only that specific index error using single-field queries and local filtering/sorting. Active/latest session fallback examines at most 5,000 historical records for that PC, and refuses to operate if that bound is exceeded instead of silently missing an active session. The optimized indexed queries remain preferred; fallback increases read volume. Permission, credential and network errors do not trigger this fallback. Disabling even single-field indexes still needs a settings correction.
+
+The official emulator does not enforce missing composite indexes. To exercise the recovery path explicitly against real emulator data, run `NEXUS_TEST_FIRESTORE_EMULATOR=127.0.0.1:8085 NEXUS_TEST_MISSING_INDEX=1 npm test`. A test-process-only import hook rejects composite queries and verifies the booking workflow still succeeds; it never runs in the deployed application.
+
+API errors now distinguish missing indexes, denied server permissions and missing databases where the provider supplies a known error code. Unexpected failures retain a generic message and include a reference that can be matched in Vercel Runtime Logs. Raw error messages/credentials are not sent to the browser or logs; index-specific Firebase Console URLs can be logged to help configure the index.

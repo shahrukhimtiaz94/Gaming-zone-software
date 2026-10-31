@@ -4,12 +4,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { get, all, run, tx, ready } from './storage.js';
+import { describeError, indexConsoleLink } from './errors.js';
 const root=fileURLToPath(new URL('.',import.meta.url));
 const now=()=>Date.now();
 const log=(actor,action)=>run('INSERT INTO audit(time,actor,action) VALUES(?,?,?)',now(),actor,action);
 const active=id=>get('SELECT * FROM sessions WHERE device_id=? AND stopped IS NULL AND end>?',id,now());
 function respond(res,status,obj){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(obj));}
-function fail(message,status=400){throw Object.assign(new Error(message),{status});}
+function fail(message,status=400){throw Object.assign(new Error(message),{status,expose:true});}
 function user(req){const token=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('zone='))?.slice(5);return get('SELECT users.* FROM tokens JOIN users ON users.id=tokens.user_id WHERE token=? AND expires>?',token||'',now());}
 async function credentials(name,password,role){const salt=randomBytes(16).toString('hex');await run('INSERT INTO users(name,role,salt,hash) VALUES(?,?,?,?)',name,role,salt,scryptSync(password,salt,64).toString('hex'));}
 function validatePassword(p){if(typeof p!=='string'||p.length<12||p.length>200)fail('Password kam az kam 12 characters ka rakhein.');}
@@ -128,7 +129,7 @@ if(route==='/api/request'){
  await tx(async()=>{if(await get('SELECT id FROM users WHERE name=?',name))fail('Ye naam pehle se use ho raha hai',409);await credentials(name,body.password,'staff');await log(u.name,`Staff account created: ${name}`);});
 }else fail('Not found',404);
 respond(res,200,{ok:true});
-}catch(e){respond(res,e.status||503,{error:e.status?e.message:'Server/database unavailable; dobara try karein.'});if(!e.status)console.error('Request failed:',e.code||e.name);}}
+}catch(e){const problem=describeError(e);const reference=randomBytes(6).toString('hex');respond(res,problem.status,{error:problem.error,...(problem.code?{code:problem.code,reference}:{})});if(!e.expose)console.error('Request failed:',JSON.stringify({reference,code:e.code||e.name,route:new URL(req.url,'http://localhost').pathname,indexUrl:indexConsoleLink(e)}));}}
 
 if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
  await ready();
