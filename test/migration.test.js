@@ -8,7 +8,7 @@ import {join} from 'node:path';
 
 test('upgrading existing databases preserves paid credit and adds agent acknowledgements', {timeout:15000}, async()=>{
  const dir=mkdtempSync(join(tmpdir(),'zone-upgrade-'));
- const testEnv={...process.env};delete testEnv.DATABASE_URL;delete testEnv.VERCEL;
+ const testEnv={...process.env};delete testEnv.DATABASE_URL;delete testEnv.VERCEL;delete testEnv.DATABASE_PROVIDER;
  let proc;
  try{
   const db=new DatabaseSync(join(dir,'zone.db'));

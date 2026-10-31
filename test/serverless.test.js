@@ -9,7 +9,7 @@ const exec=promisify(execFile);
 
 test('Vercel refuses ephemeral SQLite and accepts platform-parsed requests',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'zone-function-'));
- const env={...process.env,DATA_DIR:dir,SETUP_KEY:'test-only-key'};delete env.DATABASE_URL;delete env.VERCEL;
+ const env={...process.env,DATA_DIR:dir,SETUP_KEY:'test-only-key'};delete env.DATABASE_URL;delete env.VERCEL;delete env.DATABASE_PROVIDER;
  try{
   await assert.rejects(exec(process.execPath,['--input-type=module','-e',"await import('./storage.js')"],{env:{...env,VERCEL:'1'}}),e=>e.stderr.includes('DATABASE_URL is required on Vercel'));
   await exec(process.execPath,['--input-type=module','-e',`

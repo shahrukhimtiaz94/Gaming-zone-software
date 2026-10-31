@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // These app collections are accessed only by our authenticated backend using IAM.
+    // Admin SDK bypasses these browser rules; never expose its private credentials.
+    match /nexus_zone/{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # NEXUS Gaming Zone
 
-Working first version: a Node.js 24 web dashboard with local SQLite or hosted PostgreSQL persistence. Interface guidance is in Roman Urdu / English.
+Working first version: a Node.js 24 web dashboard with local SQLite, hosted PostgreSQL or Cloud Firestore persistence. Interface guidance is in Roman Urdu / English.
 
 ## Run locally
 
@@ -40,7 +40,7 @@ WhatsApp, email/push notifications, online payment verification, conversational 
 
 ## Data and validation
 
-Locally, data is retained in ignored `data/zone.db` (override DATA_DIR with an absolute path). With DATABASE_URL configured, data is instead stored in PostgreSQL in the nexus_zone schema; Vercel requires this persistent mode. Keep that directory private. For a consistent live backup, use SQLite's backup API or stop the server before copying the database; do not copy the main database alone while WAL writes are active.
+Locally, data is retained in ignored `data/zone.db` (override DATA_DIR with an absolute path). With DATABASE_URL configured, data is instead stored in PostgreSQL in the nexus_zone schema; Vercel requires persistent storage. For Firebase Cloud Firestore instead, see [firebase/README.md](firebase/README.md) and set DATABASE_PROVIDER=firestore after configuring server credentials and indexes. Keep that directory private. For a consistent live backup, use SQLite's backup API or stop the server before copying the database; do not copy the main database alone while WAL writes are active.
 
 ```bash
 npm test

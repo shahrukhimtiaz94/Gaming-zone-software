@@ -2,6 +2,10 @@
 
 The repository now contains a Node.js Vercel function (`api/index.js`), frontend assets, routing (`vercel.json`), and PostgreSQL persistence. Deployment has **not** been performed from this workspace: no Vercel identity is connected, and the current cloud network policy denies the Vercel API. Saving an allowlist draft does not apply it to the running machine.
 
+## Firebase Cloud Firestore alternative
+
+If your database is Firebase **Cloud Firestore**, follow [firebase/README.md](firebase/README.md). Set DATABASE_PROVIDER=firestore and configure its server credentials, indexes and rules; DATABASE_URL is not needed in this mode. Do not use the public web API key as a server credential. The PostgreSQL instructions below apply only when using Postgres. Switching providers does not migrate existing records automatically.
+
 ## Existing project prerequisites
 
 Use your existing Vercel project and existing Neon/Postgres database. No new paid resources need to be created by these steps.

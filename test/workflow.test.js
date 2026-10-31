@@ -8,11 +8,13 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 test('authenticated booking, authorization, billing and durable history',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'zone-test-')),port=18000+Math.floor(Math.random()*10000);
- const testEnv={...process.env};delete testEnv.DATABASE_URL;delete testEnv.VERCEL;
+ const testEnv={...process.env};delete testEnv.DATABASE_URL;delete testEnv.VERCEL;delete testEnv.DATABASE_PROVIDER;
  const database=process.env.NEXUS_TEST_DATABASE_URL;
+ const emulator=process.env.NEXUS_TEST_FIRESTORE_EMULATOR;
  if(database){const u=new URL(database);assert.equal(u.hostname,'127.0.0.1');assert.equal(u.pathname,'/nexus_zone_test');testEnv.DATABASE_URL=database;const c=new pg.Client({connectionString:database});await c.connect();await c.query('DROP SCHEMA IF EXISTS nexus_zone CASCADE');await c.end();}
+ if(emulator){assert.match(emulator,/^127\.0\.0\.1:\d+$/);assert.ok(!database,'Choose one test backend');testEnv.DATABASE_PROVIDER='firestore';testEnv.FIREBASE_PROJECT_ID='demo-nexus-zone-test';testEnv.FIRESTORE_EMULATOR_HOST=emulator;delete testEnv.GOOGLE_APPLICATION_CREDENTIALS;const r=await fetch(`http://${emulator}/emulator/v1/projects/demo-nexus-zone-test/databases/(default)/documents`,{method:'DELETE'});assert.equal(r.status,200);}
  let proc;
- const start=()=>new Promise((resolve,reject)=>{proc=spawn(process.execPath,['server.js'],{env:{...testEnv,DATA_DIR:dir,PORT:String(port),SETUP_KEY:'test-only-key'}});proc.stdout.once('data',resolve);proc.once('error',reject);proc.once('exit',code=>reject(Error('Server exited '+code)));});
+ const start=()=>new Promise((resolve,reject)=>{proc=spawn(process.execPath,['server.js'],{env:{...testEnv,DATA_DIR:dir,PORT:String(port),SETUP_KEY:'test-only-key'}});proc.stderr.on('data',chunk=>{const line=chunk.toString();if(!line.includes('ExperimentalWarning'))process.stderr.write(line);});proc.stdout.once('data',resolve);proc.once('error',reject);proc.once('exit',code=>reject(Error('Server exited '+code)));});
  const call=async(path,body,cookie,bearer)=>{const r=await fetch(`http://127.0.0.1:${port}/api/${process.env.NEXUS_TEST_REWRITE?"index?route="+encodeURIComponent(path):path}`,{method:body?'POST':'GET',headers:{...(body?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...(bearer?{Authorization:'Bearer '+bearer}:{})},...(body?{body:JSON.stringify(body)}:{})});return {status:r.status,data:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]};};
  try{await start();assert.equal((await call('state')).status,401);assert.equal((await call('setup',{key:'wrong',name:'owner',password:'long-password-123'})).status,403);
  assert.equal((await call('setup',{key:'test-only-key',name:'owner',password:'long-password-123'})).status,200);
@@ -68,7 +70,8 @@ test('authenticated booking, authorization, billing and durable history',async()
  let row=(await call('state',null,owner)).data.requests[0];await call('approve',{id:row.id},staff);
  let expired=(await call('state',null,owner)).data.sessions.find(x=>x.device_id===2);
  const end=Date.now()-60000;
- if(database){const c=new pg.Client({connectionString:database});await c.connect();await c.query('UPDATE nexus_zone.sessions SET start=$1,"end"=$2 WHERE id=$3',[end-300000,end,expired.id]);await c.end();}
+ if(emulator){const r=await fetch(`http://${emulator}/v1/projects/demo-nexus-zone-test/databases/(default)/documents/nexus_zone/gaming-zone/sessions/${expired.id}?updateMask.fieldPaths=start&updateMask.fieldPaths=end`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({fields:{start:{integerValue:String(end-300000)},end:{integerValue:String(end)}}})});assert.equal(r.status,200);}
+ else if(database){const c=new pg.Client({connectionString:database});await c.connect();await c.query('UPDATE nexus_zone.sessions SET start=$1,"end"=$2 WHERE id=$3',[end-300000,end,expired.id]);await c.end();}
  else{const edit=new DatabaseSync(join(dir,'zone.db'));edit.prepare('UPDATE sessions SET start=?,end=? WHERE id=?').run(end-300000,end,expired.id);edit.close();}
  const continuation=await call('extend',{id:expired.id,minutes:60,expectedEnd:end},staff);
  assert.equal(continuation.status,200);
@@ -85,6 +88,11 @@ test('authenticated booking, authorization, billing and durable history',async()
  assert.equal((await call('device-key',{device:1,revoke:true},owner)).status,200);
  assert.equal((await call('agent/poll',{state:'enabled'},null,nextKey)).status,401);
  s=(await call('state',null,owner)).data;assert.equal(s.sessions.find(x=>x.id===sessionId).paid,1);assert.ok(s.sessions.find(x=>x.id===sessionId).stopped);assert.ok(s.audit.length>=5);
+ await call('request',{device:3,customer:'Player A',minutes:60},staff);await call('request',{device:3,customer:'Player B',minutes:60},staff);
+ const competing=(await call('state',null,owner)).data.requests.filter(r=>r.device_id===3);
+ const results=await Promise.all(competing.map(r=>call('approve',{id:r.id},staff)));
+ assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);
+ assert.equal((await call('state',null,owner)).data.sessions.filter(s=>s.device_id===3).length,1);
  assert.equal((await call('logout',{},owner)).status,200);assert.equal((await call('state',null,owner)).status,401);
  }finally{if(proc&&!proc.killed)await new Promise(resolve=>{proc.once('exit',resolve);proc.kill();});rmSync(dir,{recursive:true,force:true});}
 });

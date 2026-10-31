@@ -5,8 +5,10 @@ import pg from 'pg';
 import { parse } from 'pg-connection-string';
 
 const context = new AsyncLocalStorage();
-const remote = Boolean(process.env.DATABASE_URL);
-if (process.env.VERCEL && !remote) throw new Error('DATABASE_URL is required on Vercel; local SQLite is not persistent there.');
+const firestoreMode = process.env.DATABASE_PROVIDER === 'firestore';
+const firebase = firestoreMode ? await import('./firebase/storage.js') : null;
+const remote = !firestoreMode && Boolean(process.env.DATABASE_URL);
+if (process.env.VERCEL && !remote && !firestoreMode) throw new Error('DATABASE_URL is required on Vercel unless DATABASE_PROVIDER=firestore; local SQLite is not persistent there.');
 let sqlite, pool, initialization;
 let queue = Promise.resolve();
 if (remote) {
@@ -18,7 +20,7 @@ if (remote) {
   config.ssl = localTest ? false : { ...(typeof config.ssl === 'object' ? config.ssl : {}), rejectUnauthorized: true };
   pool = new pg.Pool({ ...config, max: 3, connectionTimeoutMillis: 10000, idleTimeoutMillis: 10000 });
   pool.on('error', () => console.error('Database pool connection error'));
-} else {
+} else if (!firestoreMode) {
   const { DatabaseSync } = await import('node:sqlite');
   const dir = process.env.DATA_DIR || fileURLToPath(new URL('./data', import.meta.url));
   mkdirSync(dir, { recursive: true });
@@ -51,10 +53,11 @@ async function query(sql, values = [], mode = 'all') {
   };
   return client ? execute() : exclusive(execute);
 }
-export const get = (sql, ...values) => query(sql, values, 'get');
-export const all = (sql, ...values) => query(sql, values, 'all');
-export const run = (sql, ...values) => query(sql, values, 'run');
+export const get = (sql, ...values) => firebase ? firebase.get(sql,...values) : query(sql, values, 'get');
+export const all = (sql, ...values) => firebase ? firebase.all(sql,...values) : query(sql, values, 'all');
+export const run = (sql, ...values) => firebase ? firebase.run(sql,...values) : query(sql, values, 'run');
 export async function tx(fn) {
+  if (firebase) return firebase.tx(fn);
   if (context.getStore()) return fn();
   if (remote) {
     const client = await pool.connect();
@@ -119,6 +122,7 @@ async function initialize() {
   });
 }
 export async function ready() {
+  if (firebase) return firebase.ready();
   if (!initialization) initialization = initialize().catch(e => { initialization = null; throw e; });
   return initialization;
 }
