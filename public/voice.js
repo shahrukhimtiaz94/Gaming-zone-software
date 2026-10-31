@@ -2,7 +2,7 @@ import {VoiceBookingDialogue} from './voice-dialogue.js';
 import {wakeCommand,endsConversation} from './wake-word.js';
 
 export class VoiceAssistant{
- constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree=()=>{},wakeWord=()=> 'Nexus',continuousConversation=false,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
+ constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree=()=>{},wakeWord=()=> 'Stella',continuousConversation=false,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
   Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree,wakeWord,continuousConversation,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.handsFreeEnabled=false;this.recognitionFailures=0;this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
  }
  abortRecognition(){clearTimeout(this.restartTimer);this.restartTimer=null;if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
@@ -64,7 +64,8 @@ export class VoiceAssistant{
  }
  async preview(){
   if(this.submitting)return;this.stop();this.cloudUnavailable=false;const turn=++this.turn;
-  const step={message:'Browser voice sample. Awaaz aapke system ki available voices se hai.',speech:{ur:'السلام علیکم! میں آپ کی گیمنگ اسسٹنٹ ہوں۔ بتائیے، کون سا پی سی بک کرنا ہے؟',en:'Hello! I am your gaming assistant. Which PC would you like to book?',hi:'नमस्ते! मैं आपकी गेमिंग असिस्टेंट हूँ। कौन सा पीसी बुक करना है?'}};
+  const name=String(this.wakeWord()||'Stella').slice(0,30);
+  const step={message:`Hi! Main ${name} hoon. Kaunsa PC book karna hai?`,speech:{ur:`ہائے! میں ${name} ہوں۔ کون سا پی سی بک کرنا ہے؟`,en:`Hi! I'm ${name}. Which PC would you like to book?`,hi:`हाय! मैं ${name} हूँ। कौन सा पीसी बुक करना है?`}};
   this.onMessage('assistant',step.message);this.onStatus('Voice sample chal raha hai…');
   try{await this.speak(step,turn);}catch{this.onStatus('Voice sample nahi chal saka. Browser ki sound permission check karein.');return;}
   if(turn===this.turn)this.onStatus('Sample complete. Booking ke liye Talk to assistant dabayein.');
@@ -73,7 +74,7 @@ export class VoiceAssistant{
   if(this.submitting)return;
   this.cloudUnavailable=false;this.stop('Stations check ho rahe hain…',true);const turn=this.turn;
   if(!this.Recognition){this.onStatus('Is browser mein speech recognition supported nahi. Chrome/Edge mein kholein ya form use karein.');return;}
-  try{const devices=await this.getDevices();if(turn!==this.turn)return;this.dialogue=new VoiceBookingDialogue(devices);this.active=true;await this.present(this.dialogue.start());}
+  try{const devices=await this.getDevices();if(turn!==this.turn)return;this.dialogue=new VoiceBookingDialogue(devices,this.wakeWord());this.active=true;await this.present(this.dialogue.start());}
   catch{if(turn===this.turn)this.onStatus('Stations load nahi hue. Connection check karein aur dobara button dabayein.');}
  }
  async cloudSpeak(text,turn){

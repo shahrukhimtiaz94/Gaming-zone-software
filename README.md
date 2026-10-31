@@ -65,4 +65,4 @@ Voice parser/dialogue/controller tests cover English/Urdu/Hindi numbers, name pr
 
 ## Hands-free mode
 
-Choose a name such as Nexus, click Hands-free on karein once and allow the microphone. Say its name to begin; conversation continues across replies and silence. Say **OK thanks** to return to waiting for the name. Stop voice turns the mic fully off. Keep the tab visible; background/sleep/browser shutdown cannot provide reliable always-on listening. See the [hands-free guide](assistant/README.md#hands-free-conversations) for privacy, browser limitations and recovery.
+Choose a name such as Stella, click Hands-free on karein once and allow the microphone. Say its name to begin; conversation continues across replies and silence. Say **OK thanks** to return to waiting for the name. Stop voice turns the mic fully off. Keep the tab visible; background/sleep/browser shutdown cannot provide reliable always-on listening. See the [hands-free guide](assistant/README.md#hands-free-conversations) for privacy, browser limitations and recovery.

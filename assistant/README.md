@@ -53,7 +53,7 @@ A Google HTTP 503 indicates provider-side unavailability, not an instruction to 
 
 ## Hands-free conversations
 
-Set the assistant name (default **Nexus**) and click **Hands-free on karein** once to allow microphone access. The chosen name alone is stored locally in this browser; the mic-enable state and conversation are not restored automatically. Say “Nexus, aaj ki earning batao” or just “Nexus” to wake the assistant. Its next turns do not require the wake name again. Silent recognition endings and no-speech events re-arm the listening turn automatically instead of requiring another click.
+Set the assistant name (default **Stella**) and click **Hands-free on karein** once to allow microphone access. The chosen name alone is stored locally in this browser; the mic-enable state and conversation are not restored automatically. Say “Stella, aaj ki earning batao” or just “Stella” to wake the assistant. Its next turns do not require the wake name again. Silent recognition endings and no-speech events re-arm the listening turn automatically instead of requiring another click.
 
 Say **“OK thanks”** (also “okay thanks”, “اوکے تھینکس”, “ओके थैंक्स”) while it is listening to pause the conversation and return to wake-name detection. The recent conversation context stays in memory. Say the name again to resume. **Stop voice** or the hands-free off button disables the microphone and all queued restarts. Logout, page exit, changing mode/language/name or backgrounding the tab also disables listening. Permission/device failures stop immediately; repeated network/recognition errors stop after three failures, rather than looping forever.
 

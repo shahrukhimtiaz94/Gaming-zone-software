@@ -35,7 +35,7 @@ const voiceOptions={
  onStatus:text=>{$('#voiceNote').textContent=text;$('#voice').setAttribute('aria-pressed',String(assistant.active));},
  onSubmitting:busy=>{$('#booking button').disabled=busy;$('#voice').disabled=busy;$('#voiceRetry').disabled=busy;$('#voicePreview').disabled=busy;$('#aiSend').disabled=busy;$('#aiCheck').disabled=busy;},
  onHandsFree:enabled=>{$('#handsFree').setAttribute('aria-pressed',String(enabled));$('#handsFree').textContent=enabled?'⏹ Hands-free off karein':'🎙 Hands-free on karein';$('#handsFreeState').textContent=enabled?'Mic enabled: naam lene par conversation shuru; OK thanks par wake-word ka intezar.':'Hands-free off. Microphone band hai.';},
- wakeWord:()=>$('#wakeName').value.trim()||'Nexus',
+ wakeWord:()=>$('#wakeName').value.trim()||'Stella',
  language:()=>$('#voiceLanguage').value,voiceName:()=>$('#voiceChoice').value
 };
 const bookingAssistant=new VoiceAssistant(voiceOptions);
@@ -50,8 +50,8 @@ $('#aiClear').onclick=()=>{aiAssistant.clear();$('#voiceLog').replaceChildren();
 document.addEventListener('click',async e=>{const button=e.target.closest('[data-ai-confirm]');if(!button)return;const wasActive=assistant.active,resumeConversation=wasActive||assistant.handsFreeEnabled;assistant.stop(undefined,true);if(!confirm(button.dataset.summary+'\nIs action ko ab apply karein?')){if(resumeConversation){assistant.active=true;assistant.listen();}return;}button.disabled=true;try{const result=await api('assistant/confirm',{id:button.dataset.aiConfirm});button.closest('.request').remove();await refresh();await aiAssistant.confirmed(result,assistant===aiAssistant&&resumeConversation);if(assistant!==aiAssistant){if(wasActive){assistant.active=true;assistant.listen();}else if(assistant.handsFreeEnabled)assistant.queueListening(assistant.turn,'wake');}}catch(e){error(e);button.disabled=false;if(resumeConversation){assistant.active=true;assistant.listen();}}});
 
 $('#handsFree').onclick=()=>{if(assistant.handsFreeEnabled)assistant.stop();else assistant.enableHandsFree();};
-$('#wakeName').onchange=()=>{assistant.stop('Naam badal gaya. Hands-free dobara on karein.');try{localStorage.setItem('nexusWakeName',$('#wakeName').value.trim());}catch{}};
-try{const saved=localStorage.getItem('nexusWakeName');if(saved&&saved.length<=30)$('#wakeName').value=saved;}catch{}
+$('#wakeName').onchange=()=>{assistant.stop('Naam badal gaya. Hands-free dobara on karein.');try{localStorage.setItem('nexusWakeNameV2',$('#wakeName').value.trim());}catch{}};
+try{const saved=localStorage.getItem('nexusWakeNameV2');if(saved&&saved.length<=30)$('#wakeName').value=saved;}catch{}
 $('#voice').onclick=()=>assistant.start();$('#voicePreview').onclick=()=>assistant.preview();$('#voiceRetry').onclick=()=>assistant.listen();$('#voiceStop').onclick=()=>assistant.stop();
 $('#voiceLanguage').onchange=()=>assistant.stop('Zaban badal gayi. Talk to assistant se dobara shuru karein.');
 $('#voiceChoice').onchange=()=>assistant.stop('Voice badal gayi. Talk to assistant se dobara shuru karein.');

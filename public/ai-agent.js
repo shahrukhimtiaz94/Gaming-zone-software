@@ -6,7 +6,8 @@ export class AIChatAssistant extends VoiceAssistant{
  async start(){
   if(!this.Recognition){this.onStatus('Is browser mein voice recognition available nahi. Typed AI chat ya Chrome/Edge use karein.');return;}
   if(this.submitting)return;this.stop(undefined,true);this.cloudUnavailable=false;this.active=true;
-  await this.present({message:'Assalam o alaikum! Main aapki gaming-zone AI assistant hoon. Availability, reports, customer history ya kisi system action ke bare mein poochein. Tabdeeli ke liye staff confirmation zaroori hogi.',speech:{ur:'السلام علیکم! میں آپ کی گیمنگ زون اسسٹنٹ ہوں۔ بتائیے، کیا مدد چاہیے؟',hi:'नमस्ते! मैं आपकी गेमिंग ज़ोन असिस्टेंट हूँ। बताइए, क्या मदद चाहिए?',en:'Hello! I am your gaming zone assistant. Ask about availability, reports, customer history or system actions. How can I help?'},action:'listen'});
+  const name=String(this.wakeWord()||'Stella').slice(0,30);
+  await this.present({message:`Hi! Main ${name} hoon. Kaunsa PC book karna hai?`,speech:{ur:`ہائے! میں ${name} ہوں۔ کون سا پی سی بک کرنا ہے؟`,hi:`हाय! मैं ${name} हूँ। कौन सा पीसी बुक करना है?`,en:`Hi! I'm ${name}. Which PC would you like to book?`},action:'listen'});
  }
  handleTranscript(text){return this.send(text,false);}
  async send(text,echo=true){
