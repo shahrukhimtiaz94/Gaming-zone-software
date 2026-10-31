@@ -110,7 +110,39 @@ test('authenticated booking, authorization, billing and durable history',async()
  assert.equal((await call('assistant/confirm',{id:extension.id},owner)).status,409,'Stale preview cannot overwrite updated time');
  assert.equal((await call('state',null,owner)).data.devices[3].session.end,aiSession.end+300000);
  await assert.rejects(prepare({action:'pay',id:aiSession.id},'operator'));
+ // Server-side hands-free leases are per login and never authorize other accounts.
+ const mode=await call('assistant/handsfree',{mode:'enable'},owner);assert.equal(mode.status,200);const lease=mode.data.lease;assert.match(lease,/^[a-f0-9]{48}$/);
+ assert.equal((await call('assistant/handsfree',{mode:'renew',lease},staff)).status,403);
+ const otherOwner=(await call('login',{name:'owner',password:'long-password-123'})).cookie;
+ assert.equal((await call('assistant/handsfree',{mode:'renew',lease},otherOwner)).status,403,'Grant is bound to this login token');
+ const autoBook=async(lease,args,cookie=owner)=>{const {stdout}=await promisify(execFile)(process.execPath,['--input-type=module','-e',`import * as db from './storage.js';import {handsFree} from './assistant/hands-free.js';import {createHash} from 'node:crypto';await db.ready();const token=process.argv[3].slice(5),sessionHash=createHash('sha256').update(token).digest('hex');const u=await db.get('SELECT * FROM users WHERE name=?','owner');const sessionValid=async()=>Boolean(await db.get('SELECT users.* FROM tokens JOIN users ON users.id=tokens.user_id WHERE token=? AND expires>?',token,Date.now()));const result=await handsFree.book(process.argv[1],u,sessionHash,JSON.parse(process.argv[2]),{sessionValid});process.stdout.write(JSON.stringify(result));`,lease,JSON.stringify(args),cookie],{env:{...testEnv,DATA_DIR:dir}});return JSON.parse(stdout);};
+ const automatic=await autoBook(lease,{device:6,customer:'Hands-free player',minutes:30});assert.equal(automatic.executed,true);
+ let current=(await call('state',null,owner)).data;assert.equal(current.devices[5].session.customer,'Hands-free player');assert.equal(current.requests.some(r=>r.customer==='Hands-free player'),false,'No pending approval after auto-booking');
+ assert.ok(current.audit.some(r=>r.action.includes('Hands-free AUTO START PC 6')));
+ await assert.rejects(autoBook(lease,{device:6,customer:'Duplicate',minutes:30}));await assert.rejects(autoBook(lease,{device:11,customer:'PS5',minutes:30}));
+ await assert.rejects(autoBook(lease,{device:7,minutes:30}),'Missing customer cannot be invented');
+ assert.equal((await call('assistant/handsfree',{mode:'disable',lease},owner)).status,200);
+ await assert.rejects(autoBook(lease,{device:7,customer:'Blocked after off',minutes:30}));
+ assert.equal((await call('assistant/handsfree',{mode:'renew',lease},owner)).status,403);
+ assert.equal((await call('devices',{mode:'add',name:'PC 11',kind:'PC',rate:450},staff)).status,403);
+ const added=await call('devices',{mode:'add',name:'PC 11',kind:'PC',rate:450},owner);assert.equal(added.status,200);const deviceId=added.data.id;assert.ok(deviceId>12);
+ assert.equal((await call('devices',{mode:'update',id:deviceId,name:'VIP PC',rate:600},owner)).status,200);
+ assert.equal((await call('devices',{mode:'update',id:deviceId,name:'VIP PC',rate:0},owner)).status,400);
+ await call('request',{device:deviceId,customer:'New station player',minutes:60},staff);let newRequest=(await call('state',null,owner)).data.requests.find(r=>r.device_id===deviceId);
+ assert.equal((await call('devices',{mode:'archive',id:deviceId},owner)).status,409,'Pending request blocks remove');
+ await call('approve',{id:newRequest.id},staff);let running=(await call('state',null,owner)).data.devices.find(d=>d.id===deviceId).session;
+ assert.equal(running.rate,600);assert.equal((await call('devices',{mode:'archive',id:deviceId},owner)).status,409,'Active session blocks remove');
+ await call('devices',{mode:'update',id:deviceId,name:'VIP PC',rate:750},owner);assert.equal((await call('state',null,owner)).data.devices.find(d=>d.id===deviceId).session.rate,600,'Existing session rate must be retained');
+ await call('stop',{id:running.id},staff);assert.equal((await call('devices',{mode:'archive',id:deviceId},owner)).status,200);
+ let archived=(await call('state',null,owner)).data;assert.ok(!archived.devices.some(d=>d.id===deviceId));assert.ok(archived.sessions.some(s=>s.device_id===deviceId));assert.equal(archived.allDevices.find(d=>d.id===deviceId).archived,1);
+ assert.equal((await call('request',{device:deviceId,customer:'Removed PC',minutes:60},owner)).status,400);
+ assert.equal((await call('devices',{mode:'restore',id:deviceId},owner)).status,200);assert.ok((await call('state',null,owner)).data.devices.some(d=>d.id===deviceId));
+ // A rejected business transaction must discard staged writes and release Firestore locks.
+ await assert.rejects(promisify(execFile)(process.execPath,['--input-type=module','-e',`import * as db from './storage.js';await db.ready();await db.tx(async()=>{await db.run('INSERT INTO requests(device_id,customer,minutes,created) VALUES(?,?,?,?)',7,'rollback-check',30,Date.now());throw Object.assign(new Error('Expected business rejection'),{expose:true,status:409});});`],{env:{...testEnv,DATA_DIR:dir}}));
+ assert.ok(!(await call('state',null,owner)).data.requests.some(r=>r.customer==='rollback-check'));
+ const logoutLease=(await call('assistant/handsfree',{mode:'enable'},owner)).data.lease;
  if(process.env.NEXUS_TEST_MISSING_INDEX)assert.ok(indexFailures>=4,'Must actually exercise composite-index fallback');
  assert.equal((await call('logout',{},owner)).status,200);assert.equal((await call('state',null,owner)).status,401);
+ await assert.rejects(autoBook(logoutLease,{device:8,customer:'After logout',minutes:30}));
  }finally{if(proc&&!proc.killed)await new Promise(resolve=>{proc.once('exit',resolve);proc.kill();});rmSync(dir,{recursive:true,force:true});}
 });

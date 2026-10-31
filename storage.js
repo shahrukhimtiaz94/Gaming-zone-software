@@ -112,6 +112,10 @@ async function initialize() {
         else sqlite.exec(`ALTER TABLE agents ADD COLUMN ${name} INTEGER`);
       }
     }
+    if (!(await columns('devices')).includes('archived')) {
+      if (remote) await context.getStore().query('ALTER TABLE nexus_zone.devices ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+      else sqlite.exec('ALTER TABLE devices ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+    }
     if (!(await columns('sessions')).includes('paid_amount')) {
       if (remote) await context.getStore().query(`ALTER TABLE nexus_zone.sessions ADD COLUMN paid_amount ${real} NOT NULL DEFAULT 0`);
       else sqlite.exec('ALTER TABLE sessions ADD COLUMN paid_amount REAL NOT NULL DEFAULT 0');

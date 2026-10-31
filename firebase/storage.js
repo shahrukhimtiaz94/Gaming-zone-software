@@ -112,13 +112,22 @@ export async function run(sql,...v){
 export async function tx(fn){
  if(scope.getStore())return fn();
  root();
- return database.runTransaction(async transaction=>{
+ const outcome=await database.runTransaction(async transaction=>{
   const context={transaction,writes:new Map(),cache:new Map()};
-  const result=await scope.run(context,fn);
+  let result;
+  try{result=await scope.run(context,fn);}catch(error){
+   // Business rejection must discard buffered mutations and finish a read-only commit.
+   // The SDK's best-effort asynchronous rollback can leave locks until timeout when
+   // a serverless/short-lived caller exits immediately after a rejected transaction.
+   if(error.expose)return {error};
+   throw error;
+  }
   // All reads are complete before staging writes in the Firestore transaction.
   for(const {ref,data} of context.writes.values()){if(data===undefined)transaction.delete(ref);else transaction.set(ref,data);}
-  return result;
+  return {result};
  });
+ if(outcome.error)throw outcome.error;
+ return outcome.result;
 }
 let initialization;
 export function ready(){

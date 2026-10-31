@@ -67,3 +67,15 @@ test('persistent 503 stops after one retry; quota/auth failures never retry',asy
   await assert.rejects(client({}),e=>status===503?e.code==='AI_PROVIDER_UNAVAILABLE'&&e.message.includes('gemini-2.5-flash-lite'):status===429?e.code==='AI_QUOTA_EXCEEDED':e.code==='AI_AUTH_FAILED');assert.equal(calls,status===503?2:1);
  }
 });
+
+test('only active server auto-book context can execute a complete PC request; errors after booking report actual success',async()=>{
+ let generations=0,automatic=0,manual=0;const booking={device:'PC 6',customer:'Ahmed',minutes:60,bill:300,sessionId:99};
+ const agent=createAgent({generate:async body=>{assert.match(body.systemInstruction.parts[0].text,/SERVER OVERRIDE/);if(++generations===1)return call('prepare_action',{action:'request',device:6,customer:'Ahmed',minutes:60});throw Object.assign(Error('Provider unavailable'),{code:'AI_PROVIDER_UNAVAILABLE'});},execute:async()=>{manual++;}});
+ const result=await agent({message:'PC 6 Ahmed ko 1 hour book karo',user:{id:1,role:'owner'},autoBook:async args=>{automatic++;assert.equal(args.device,6);return {executed:true,booking};}});
+ assert.equal(automatic,1);assert.equal(manual,0);assert.deepEqual(result.executions,[booking]);assert.match(result.reply,/start ho gaya/);assert.equal(result.actions.length,0);
+});
+test('hands-free booking permission does not grant automatic payments',async()=>{
+ let generations=0,automatic=0,manual=0;
+ const agent=createAgent({generate:async()=>++generations===1?call('prepare_action',{action:'pay',id:1}):final(answer),execute:async()=>{manual++;return {confirmationRequired:true,card:{id:'a'.repeat(48),summary:'Owner confirm',action:'pay'}};}});
+ const result=await agent({message:'payment received',user:{id:1,role:'owner'},autoBook:async()=>automatic++});assert.equal(automatic,0);assert.equal(manual,1);assert.equal(result.actions[0].action,'pay');
+});

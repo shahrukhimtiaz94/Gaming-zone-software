@@ -14,17 +14,17 @@ export function parseBookingSpeech(text){
  const match=t.match(new RegExp(`(?:pc|computer|station|ps\\s*5|play\\s*station|پلے\\s*اسٹیشن|प्ले\\s*स्टेशन)\\s*(?:number|no\\.?|نمبر|नंबर)?\\s*(\\d+)(?!\\d)(?!\\s*(?:${unit}|${minuteUnit}))`,'i'));
  let minutes=0,found=false;
  for(const m of t.matchAll(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(${unit}|${minuteUnit})(?![a-z])`,'gi'))){found=true;minutes+=Number(m[1])*(new RegExp(`^${minuteUnit}$`,'i').test(m[2])?1:60);}
- return {device:match?Number(match[1])+(ps?10:0):null,kind:ps?'PS5':'PC',minutes:found?minutes:null};
+ return {stationNumber:match?Number(match[1]):null,device:match?Number(match[1])+(ps?10:0):null,kind:ps?'PS5':'PC',minutes:found?minutes:null};
 }
 const cancellation=t=>/(?:^|\s)(?:cancel|stop|no|nope|nahi|nahin|mat|نہیں|منسوخ|نہ|नहीं|नही|रद्द)(?:\s|$|[.!،])/i.test(t);
 const confirmation=t=>/^(?:yes|yeah|yep|confirm|haan|han|ha|ji|jee|ہاں|جی|हाँ|हां)(?:\s+(?:please|confirm|booking|request|book|kar|karo|do|dein|karain|kardein|karlo|karna|hai|karein|جی|کر|دو|دیں|کریں|ہاں|हाँ|कर|दो))*[.!۔]?$/iu.test(t.trim());
 const prompt=(message,en,ur,hi,action='listen')=>({message,speech:{en,ur,hi},action});
 export class VoiceBookingDialogue{
- constructor(devices,name='Stella'){this.name=String(name||'Stella').slice(0,30);this.devices=devices;this.draft={device:null,minutes:null,customer:''};this.phase='device';this.kind='PC';}
+ constructor(devices,name='Maya'){this.name=String(name||'Maya').slice(0,30);this.devices=devices;this.draft={device:null,minutes:null,customer:''};this.phase='device';this.kind='PC';}
  start(){return prompt(`Hi! Main ${this.name} hoon. Kaunsa PC book karna hai?`,`Hi! I'm ${this.name}. Which PC would you like to book?`,`ہائے! میں ${this.name} ہوں۔ کون سا پی سی بک کرنا ہے؟`,`हाय! मैं ${this.name} हूँ। कौन सा पीसी बुक करना है?`);}
  next(){
   const d=this.devices.find(d=>d.id===this.draft.device);
-  if(!d||d.kind!==this.kind){this.phase='device';return prompt(this.kind==='PS5'?'PS5 number 1 ya 2 batayein.':'PC number 1 se 10 batayein.','Please tell me the station number. For example, PC number five.','براہ کرم اسٹیشن کا نمبر بتائیں۔ مثلاً پی سی نمبر پانچ۔','कृपया स्टेशन का नंबर बताएं। जैसे पीसी नंबर पांच।');}
+  if(!d||d.kind!==this.kind){this.phase='device';return prompt(this.kind==='PS5'?'Available PS5 ka number batayein.':'Available PC ka number batayein.','Please tell me the station number. For example, PC number five.','براہ کرم اسٹیشن کا نمبر بتائیں۔ مثلاً پی سی نمبر پانچ۔','कृपया स्टेशन का नंबर बताएं। जैसे पीसी नंबर पांच।');}
   if(d.session){this.draft.device=null;this.phase='device';return prompt(`${d.name} busy hai. Koi doosra station batayein.`,`${d.name} is busy. Please choose another station.`,`${d.name} ابھی مصروف ہے۔ کوئی دوسرا اسٹیشن بتائیں۔`,`${d.name} अभी व्यस्त है। दूसरा स्टेशन बताएं।`);}
   if(!Number.isInteger(this.draft.minutes)||this.draft.minutes<5||this.draft.minutes>720){this.draft.minutes=null;this.phase='duration';return prompt(`${d.name} free hai. Kitni der? Misal: one hour ya thirty minutes.`,`${d.name} is available. How long? For example, one hour or thirty minutes.`,`${d.name} خالی ہے۔ کتنی دیر کے لیے؟ مثلاً ایک گھنٹہ یا تیس منٹ۔`,`${d.name} खाली है। कितनी देर के लिए? जैसे एक घंटा या तीस मिनट।`);}
   if(!this.draft.customer){this.phase='customer';return prompt(`${d.name}, ${this.draft.minutes} minutes. Customer ka naam kya hai?`,`${d.name}, for ${this.draft.minutes} minutes. What is the customer's name?`,`${d.name}، ${this.draft.minutes} منٹ۔ کسٹمر کا نام کیا ہے؟`,`${d.name}, ${this.draft.minutes} मिनट। ग्राहक का नाम क्या है?`);}
@@ -37,8 +37,8 @@ export class VoiceBookingDialogue{
   if(cancellation(raw.toLowerCase())){this.phase='done';return prompt('Request cancel kar di. Koi session start nahi hua.','Cancelled. No session was started.','درخواست منسوخ کر دی۔ کوئی سیشن شروع نہیں ہوا۔','अनुरोध रद्द कर दिया। कोई सेशन शुरू नहीं हुआ।','done');}
   if(/(?:^|\s)(?:unlock|approve|discount|free)(?:\s|$)/i.test(raw))return prompt('Main booking request bana sakta hoon. Unlock aur approval staff ke button se honge.','I can create a booking request. Only staff can approve and start the session using the dashboard.','میں بکنگ کی درخواست بنا سکتی ہوں۔ سیشن شروع کرنے کے لیے اسٹاف کو ڈیش بورڈ سے منظوری دینی ہوگی۔','मैं बुकिंग अनुरोध बना सकती हूँ। सेशन शुरू करने के लिए स्टाफ को डैशबोर्ड से मंजूरी देनी होगी।');
   const parsed=parseBookingSpeech(raw);let changed=false;
-  if(parsed.device!==null){this.draft.device=parsed.device;this.kind=parsed.kind;changed=true;}
-  else if(this.phase==='device'){if(parsed.kind==='PS5')this.kind='PS5';const bare=normalize(raw);if(/^\d+$/.test(bare)){this.draft.device=Number(bare)+(this.kind==='PS5'?10:0);changed=true;}}
+  if(parsed.device!==null){this.kind=parsed.kind;const named=this.devices.find(d=>d.kind===parsed.kind&&d.name.toLowerCase().replace(/\s+/g,'')===(parsed.kind+parsed.stationNumber).toLowerCase());const fallback=this.devices.find(d=>d.id===parsed.device&&d.kind===parsed.kind);this.draft.device=named?.id??fallback?.id??-1;changed=true;}
+  else if(this.phase==='device'){if(parsed.kind==='PS5')this.kind='PS5';const bare=normalize(raw);if(/^\d+$/.test(bare)){const number=Number(bare),named=this.devices.find(d=>d.kind===this.kind&&d.name.toLowerCase().replace(/\s+/g,'')===(this.kind+number).toLowerCase());this.draft.device=named?.id??this.devices.find(d=>d.id===number+(this.kind==='PS5'?10:0)&&d.kind===this.kind)?.id??-1;changed=true;}}
   if(parsed.minutes!==null){this.draft.minutes=parsed.minutes;changed=true;}
   else if(this.phase==='duration'&&/^\d+$/.test(normalize(raw))){this.draft.minutes=Number(normalize(raw));changed=true;}
   if(this.phase==='confirm'&&!changed){

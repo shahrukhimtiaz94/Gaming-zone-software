@@ -16,7 +16,7 @@ This is a Windows PowerShell 5.1 **SYSTEM scheduled task**, not a compiled Windo
    ```
 
 5. Enter the PC key at the secure prompt, then choose a password for the new `NexusPlayer` account. The installer refuses to overwrite an existing account/install. It creates a disabled standard user, protects `%ProgramData%\NexusZone` with SYSTEM/Administrators-only ACLs, and registers `NexusZoneAgent` as a SYSTEM startup task. Do not give customers the administrator account or its password.
-6. Check Task Scheduler and dashboard status. Approve a short booking. On Windows choose `NexusPlayer` and enter its password. Approval enables sign-in; **it does not open the desktop automatically**. Repeat for PC 2 through PC 10 with a different key on each machine.
+6. Check Task Scheduler and dashboard status. Approve a short booking. On Windows choose `NexusPlayer` and enter its password. Approval enables sign-in; **it does not open the desktop automatically**. Repeat for other PCs using each station’s unique device ID/key shown in Settings. IDs are independent of display names; a new PC 11 may have ID 13. The installer accepts positive device IDs and validates the server mapping.
 
 The dashboard can create a timed booking even when an agent is offline. That is not proof of physical access. Check the agent's state before seating the player. Installer preflight briefly reports `blocked` before installation finishes; wait for version `0.3.0-win10-x64`.
 

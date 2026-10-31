@@ -8,6 +8,8 @@ import { describeError, indexConsoleLink } from './errors.js';
 import { synthesizeUrdu } from './firebase/speech.js';
 import {createAgent,createGeminiClient} from './assistant/gemini.js';
 import {zoneTools,supportedActions} from './assistant/tools.js';
+import {handsFree} from './assistant/hands-free.js';
+import {manageDevices} from './assistant/devices.js';
 const chatAgent=createAgent({generate:createGeminiClient(),execute:zoneTools});
 const root=fileURLToPath(new URL('.',import.meta.url));
 const now=()=>Date.now();
@@ -76,18 +78,23 @@ if(route==='/api/agent/poll'&&req.method==='POST'){
 }
 const u=await user(req);if(!u)fail('Login karein',401);
 if(route==='/api/logout'&&req.method==='POST'){
- const token=(req.headers.cookie||'').match(/(?:^|;\s*)zone=([^;]+)/)?.[1];await run('DELETE FROM tokens WHERE token=?',token||'');
+ const token=(req.headers.cookie||'').match(/(?:^|;\s*)zone=([^;]+)/)?.[1];await tx(()=>run('DELETE FROM tokens WHERE token=?',token||''));
  res.setHeader('Set-Cookie',`zone=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secureCookie()}`);return respond(res,200,{ok:true});
 }
 if(route==='/api/state'){
- const devices=await all('SELECT * FROM devices ORDER BY id');
+ const allDevices=await all('SELECT * FROM devices ORDER BY id'),devices=allDevices.filter(d=>!d.archived);
  const snapshots=await Promise.all(devices.map(async d=>{
   const a=await get('SELECT last_seen,state,version,session_id,session_end FROM agents WHERE device_id=?',d.id);
   return {...d,session:(await active(d.id))||null,agent:a?{...a,online:a.last_seen!=null&&now()-a.last_seen<20000}:null};
  }));
- return respond(res,200,{devices:snapshots,requests:await all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC"),sessions:await all('SELECT sessions.*,users.name AS staff,devices.name AS device FROM sessions JOIN users ON users.id=approved_by JOIN devices ON devices.id=device_id ORDER BY sessions.start DESC,sessions.id DESC LIMIT 5000'),audit:u.role==='owner'?await all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'):[]});
+ return respond(res,200,{devices:snapshots,allDevices:u.role==='owner'?allDevices:undefined,requests:await all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC"),sessions:await all('SELECT sessions.*,users.name AS staff,devices.name AS device FROM sessions JOIN users ON users.id=approved_by JOIN devices ON devices.id=device_id ORDER BY sessions.start DESC,sessions.id DESC LIMIT 5000'),audit:u.role==='owner'?await all('SELECT * FROM audit ORDER BY id DESC LIMIT 100'):[]});
 }
 if(req.method!=='POST')fail('Not found',404);
+if(route==='/api/devices'){return respond(res,200,await manageDevices(body,u));}
+if(route==='/api/assistant/handsfree'){
+ const token=(req.headers.cookie||'').match(/(?:^|;\s*)zone=([^;]+)/)?.[1]||'';
+ return respond(res,200,await handsFree.control(body.mode,body.lease,u,createHash('sha256').update(token).digest('hex')));
+}
 if(route==='/api/assistant/chat'){
  if(!process.env.GEMINI_API_KEY)throw Object.assign(new Error('Real AI agent ke liye Vercel mein GEMINI_API_KEY securely add karein. Key chat mein share na karein.'),{status:503,expose:true,code:'AI_NOT_CONFIGURED'});
  if(typeof body.message!=='string'||body.message.length>1200||!body.message.trim())fail('AI sawal 1–1200 characters rakhein');
@@ -98,7 +105,12 @@ if(route==='/api/assistant/chat'){
   if(a.attempts>=30)fail('AI limit poori ho gayi. 10 minutes baad try karein; manual dashboard available hai.',429);
   await run('UPDATE login_attempts SET attempts=attempts+1 WHERE identity=?',identity);
  });
- return respond(res,200,await chatAgent({message:body.message,history:body.history||[],user:{id:u.id,name:u.name,role:u.role}}));
+ const token=(req.headers.cookie||'').match(/(?:^|;\s*)zone=([^;]+)/)?.[1]||'',sessionHash=createHash('sha256').update(token).digest('hex');
+ const grant=await handsFree.read(body.handsFreeLease,u,sessionHash);
+ if(body.handsFreeLease&&!grant)throw Object.assign(new Error('Hands-free permission off/expired hai. Dobara enable karein.'),{status:403,expose:true,code:'HANDS_FREE_EXPIRED'});
+ let disconnected=false;const onClose=()=>{if(!res.writableEnded)disconnected=true;};res.once?.('close',onClose);
+ try{return respond(res,200,await chatAgent({message:body.message,history:body.history||[],user:{id:u.id,name:u.name,role:u.role},autoBook:grant?args=>handsFree.book(grant.id,u,sessionHash,args,{cancelled:()=>disconnected,sessionValid:async()=>(await user(req))?.id===u.id}):null}));}
+ finally{res.off?.('close',onClose);}
 }
 if(route==='/api/assistant/confirm'){
  if(typeof body.id!=='string'||!/^[a-f0-9]{48}$/.test(body.id))fail('Action ID valid nahi',400);
@@ -132,7 +144,7 @@ if(route==='/api/voice/speak'){
 if(route==='/api/device-key'){
  if(u.role!=='owner')fail('Owner only',403);
  const result=await tx(async()=>{
-  const d=await get("SELECT * FROM devices WHERE id=? AND kind='PC'",Number(body.device));if(!d)fail('Windows PC required');
+  const d=await get("SELECT * FROM devices WHERE id=? AND kind='PC'",Number(body.device));if(!d||d.archived)fail('Active Windows PC required');
   if(body.revoke===true){await run('DELETE FROM agents WHERE device_id=?',d.id);await log(u.name,`${d.name}: agent key revoked`);return {ok:true};}
   const key=randomBytes(32).toString('hex');
   await run("INSERT INTO agents(device_id,key_hash,state) VALUES(?,?,'unpaired') ON CONFLICT(device_id) DO UPDATE SET key_hash=excluded.key_hash,last_seen=NULL,state='unpaired',version=NULL,session_id=NULL,session_end=NULL",d.id,createHash('sha256').update(key).digest('hex'));
@@ -140,14 +152,14 @@ if(route==='/api/device-key'){
  });return respond(res,200,result);
 }
 if(route==='/api/request'){
- const d=await get('SELECT * FROM devices WHERE id=?',Number(body.device));if(!d)fail('Device nahi mila');
+ const d=await get('SELECT * FROM devices WHERE id=?',Number(body.device));if(!d||d.archived)fail('Active device nahi mila');
  const minutes=Number(body.minutes);if(!Number.isInteger(minutes)||minutes<5||minutes>720)fail('Duration 5 se 720 minutes rakhein');
  const customer=String(body.customer||'').trim();if(!customer||customer.length>80)fail('Customer naam 1–80 characters');
  await tx(async()=>{await run('INSERT INTO requests(device_id,customer,minutes,created) VALUES(?,?,?,?)',d.id,customer,minutes,now());await log(u.name,`${d.name}: ${customer}, ${minutes} min request`);});
 }else if(route==='/api/approve'){
  await tx(async()=>{
   const r=await get("SELECT * FROM requests WHERE id=? AND status='pending'",Number(body.id));if(!r)fail('Request available nahi');if(await active(r.device_id))fail('Device busy hai',409);
-  const d=await get('SELECT * FROM devices WHERE id=?',r.device_id),start=now();
+  const d=await get('SELECT * FROM devices WHERE id=?',r.device_id),start=now();if(!d||d.archived)fail('Device removed hai. Request start nahi ho sakti.',409);
   await run('INSERT INTO sessions(device_id,customer,start,end,rate,approved_by) VALUES(?,?,?,?,?,?)',d.id,r.customer,start,start+r.minutes*60000,d.rate,u.id);
   await run("UPDATE requests SET status='approved' WHERE id=?",r.id);await log(u.name,`${d.name}: approved ${r.customer}, ${r.minutes} min`);
  });

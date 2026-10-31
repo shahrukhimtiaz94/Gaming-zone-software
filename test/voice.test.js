@@ -72,3 +72,7 @@ test('cloud audio completes before microphone opens and stop cancels playback',a
   const saying=h.say('PC five two hours');await flush();h.assistant.stop();await saying;assert.equal(audio.paused,true);assert.equal(h.assistant.active,false);assert.equal(h.assistant.recognition,null);
  }finally{h.assistant.stop();}
 });
+
+test('basic booking resolves PC labels independently of catalog IDs after stations are added',()=>{
+ const catalog=[...devices,{id:13,name:'PC 11',kind:'PC',rate:450,session:null}];const d=new VoiceBookingDialogue(catalog);d.receive('PC eleven one hour');assert.equal(d.draft.device,13);assert.equal(d.phase,'customer');
+});

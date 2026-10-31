@@ -16,7 +16,7 @@ export function createZoneTools({db=database,clock=()=>Date.now()}={}){
   if(action==='request'){
    const device=Number(args.device),minutes=Number(args.minutes),customer=String(args.customer||'').trim();
    if(!Number.isInteger(device)||!Number.isInteger(minutes)||minutes<5||minutes>720||!customer||customer.length>80)throw toolError('Valid station, customer name aur 5–720 minutes chahiye.');
-   const d=await db.get('SELECT * FROM devices WHERE id=?',device);if(!d)throw toolError('Station nahi mila.');if(await active(device))throw toolError('Station busy hai. Doosra PC choose karein.');
+   const d=await db.get('SELECT * FROM devices WHERE id=?',device);if(!d||d.archived)throw toolError('Active station nahi mila.');if(await active(device))throw toolError('Station busy hai. Doosra PC choose karein.');
    payload={device,minutes,customer};summary=`${d.name}: ${customer}, ${minutes} minutes, Rs ${Math.round(minutes/60*d.rate)}. Sirf pending request banegi; PC abhi start nahi hoga.`;
   }else if(action==='approve'||action==='reject'){
    const r=await db.get("SELECT * FROM requests WHERE id=? AND status='pending'",Number(args.id));if(!r)throw toolError('Pending request nahi mili.');
@@ -39,8 +39,8 @@ export function createZoneTools({db=database,clock=()=>Date.now()}={}){
  }
  return async function execute(name,args,user){
   if(name==='zone_overview'){
-   const devices=await db.all('SELECT * FROM devices ORDER BY id');
-   return {stations:await Promise.all(devices.map(async d=>{const s=await active(d.id);return {id:d.id,name:d.name,rate:d.rate,status:s?'busy':'available',session:s?{id:s.id,customer:s.customer,end:s.end,minutesLeft:Math.max(0,Math.ceil((s.end-clock())/60000))}:null};})),pendingRequests:(await db.all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC")).slice(0,30),note:'Availability is booking status. Native Windows enforcement remains unverified; PS5 physical control is not implemented.'};
+   const devices=(await db.all('SELECT * FROM devices ORDER BY id')).filter(d=>!d.archived);
+   return {stations:await Promise.all(devices.map(async d=>{const s=await active(d.id);return {id:d.id,name:d.name,kind:d.kind,rate:d.rate,status:s?'busy':'available',session:s?{id:s.id,customer:s.customer,end:s.end,minutesLeft:Math.max(0,Math.ceil((s.end-clock())/60000))}:null};})),pendingRequests:(await db.all("SELECT * FROM requests WHERE status='pending' ORDER BY id DESC")).slice(0,30),note:'Availability is booking status. Native Windows enforcement remains unverified; PS5 physical control is not implemented.'};
   }
   if(name==='usage_report'){
    if(!['today','week','month'].includes(args.period))throw toolError('Period today, week ya month hona chahiye.');

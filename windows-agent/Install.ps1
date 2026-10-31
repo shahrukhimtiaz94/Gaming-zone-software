@@ -2,7 +2,7 @@
 #Requires -RunAsAdministrator
 param(
  [Parameter(Mandatory=$true)][uri]$Server,
- [Parameter(Mandatory=$true)][ValidateRange(1,10)][int]$Device
+ [Parameter(Mandatory=$true)][ValidateRange(1,2147483647)][int]$Device
 )
 $ErrorActionPreference='Stop'
 if (-not [Environment]::Is64BitProcess) { throw '64-bit Windows PowerShell as Administrator use karein.' }

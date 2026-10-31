@@ -1,6 +1,6 @@
 # Real gaming-zone AI agent
 
-The dashboard now includes a real model-backed conversation mode, alongside the basic booking dialogue. The default AI uses the **Gemini Developer API** with Google AI Studio credentials. Firebase web configuration/service-account credentials do not substitute for a Gemini API key.
+The Settings page includes real model-backed conversation controls and the basic booking dialogue; the dashboard has a hands-free toggle. The default AI uses the **Gemini Developer API** with Google AI Studio credentials. Firebase web configuration/service-account credentials do not substitute for a Gemini API key.
 
 ## Enable on Vercel
 
@@ -23,9 +23,9 @@ For example: “Aaj kitne PCs chal rahe hain?”, “Ali ne kitna time khela?”
 
 ## Action authority
 
-Model tools are allowlisted and validated by the server. They read data or **prepare** a card; they cannot execute an operational mutation. Each card's exact payload is stored server-side with the preparing user ID, five-minute expiry and one-use consumed flag. Clicking the staff confirmation button (plus its confirmation prompt) calls the existing authenticated operation. Ownership, role, expiry, one-use state and the existing operation's business rules are checked inside a database transaction. Spoken yes or forged conversation text cannot activate a session or mark payment.
+Model tools are allowlisted and validated by the server. In manual mode they read data or prepare a card. An authenticated hands-free server grant can authorize the new-PC-booking tool to execute immediately; all other actions keep the card flow. Each card's exact payload is stored server-side with the preparing user ID, five-minute expiry and one-use consumed flag. Clicking the staff confirmation button (plus its confirmation prompt) calls the existing authenticated operation. Ownership, role, expiry, one-use state and the existing operation's business rules are checked inside a database transaction. Spoken yes or forged conversation text cannot activate a session or mark payment.
 
-A booking card saves a pending request only. Starting that session requires separate staff approval. Payment marking is owner-only. Extension previews capture the expected current end; a later change makes that preview stale. Confirming a card twice cannot apply it twice. Unknown tools, arbitrary code execution, deletion, rate editing, free sessions and external messages are unsupported. Native Windows enforcement and PS5 limitations remain unchanged.
+A manual booking card saves a pending request only. Starting that session requires separate staff approval. Payment marking is owner-only. Extension previews capture the expected current end; a later change makes that preview stale. Confirming a card twice cannot apply it twice. Unknown tools, arbitrary code execution, deletion, rate editing, free sessions and external messages are unsupported. Native Windows enforcement and PS5 limitations remain unchanged.
 
 The AI can phrase an answer incorrectly; assess live values/action summaries in the dashboard. Its written answer alone does not establish that an action was applied. No model output bypasses the server confirmation checks.
 
@@ -53,7 +53,7 @@ A Google HTTP 503 indicates provider-side unavailability, not an instruction to 
 
 ## Hands-free conversations
 
-Set the assistant name (default **Stella**) and click **Hands-free on karein** once to allow microphone access. The chosen name alone is stored locally in this browser; the mic-enable state and conversation are not restored automatically. Say “Stella, aaj ki earning batao” or just “Stella” to wake the assistant. Its next turns do not require the wake name again. Silent recognition endings and no-speech events re-arm the listening turn automatically instead of requiring another click.
+Set the assistant name (default **Maya**) and click **Hands-free on karein** once to allow microphone access. The chosen name alone is stored locally in this browser; the mic-enable state and conversation are not restored automatically. Say “Maya, aaj ki earning batao” or just “Maya” to wake the assistant. Its next turns do not require the wake name again. Silent recognition endings and no-speech events re-arm the listening turn automatically instead of requiring another click.
 
 Say **“OK thanks”** (also “okay thanks”, “اوکے تھینکس”, “ओके थैंक्स”) while it is listening to pause the conversation and return to wake-name detection. The recent conversation context stays in memory. Say the name again to resume. **Stop voice** or the hands-free off button disables the microphone and all queued restarts. Logout, page exit, changing mode/language/name or backgrounding the tab also disables listening. Permission/device failures stop immediately; repeated network/recognition errors stop after three failures, rather than looping forever.
 
@@ -62,3 +62,13 @@ The browser speech-recognition service produces the text that is matched against
 Browser/OS restrictions, sleeping devices and background tabs can interrupt listening. Keep the dashboard tab visible, and re-enable after returning from the background. This is not a native always-on Windows assistant and cannot hear after the browser closes. A shared room can produce false wakeups; no wake phrase authenticates a customer/staff member or removes staff confirmation requirements.
 
 Controller tests cover ignored ambient text, name aliases and word boundaries, multi-turn wake/listen cycles, silence recovery, OK thanks, microphone denial, bounded network retries and complete Stop cancellation. Chromium smoke tests exercise the UI with simulated speech/model/audio; actual microphones, wake accuracy and long-running recognition still need testing on the owner's Windows browser.
+
+## Hands-free PC auto-booking authorization
+
+Click the dashboard hands-free toggle once to authorize hands-free PC booking for the current login/tab and allow the mic. This switches to real AI mode. With a valid grant, `prepare_action` for a new PC request validates the station/customer/duration, rechecks availability and atomically saves an approved request, starts its session with the configured rate and writes an audit entry. No yes/button is needed for that booking. PS5, payments, extensions, existing-request approvals, stops and other actions still use their normal confirmation path. Missing customer/time details must be requested, not invented.
+
+A random lease in the server's assistant_actions collection is bound to user ID and a hash of the current login token. It lasts 60 seconds and is renewed every 20 seconds. Revocation, expiry, logout, a different login token and busy/archived devices prevent automatic booking. The server rechecks both login and grant inside the booking transaction. Off immediately stops local listening/cancels in-flight chat, then revokes the server grant. The dashboard shows pending/confirmed off or an explicit revocation failure. Network failure can allow an already-authorized in-flight command to finish before the grant expires; existing sessions are not undone. A late enable response after local off is revoked rather than reactivating the mic.
+
+“OK thanks” is pause-to-wake, **not** permission revocation. Say “hands-free off” or “Maya hands-free off” to stop the mic and automatic booking completely. No automatic mic reactivation is possible after it is fully off; returning requires the dashboard toggle. Payment marking is still owner-only, and the AI never receives the lease ID in its tool data. A successful automatic booking is reported from the actual transaction even if the provider fails on its following reply.
+
+The last recognized idle phrase is displayed transiently in Settings to diagnose wake pronunciation; it is not retained in the chat history or sent to Gemini without a wake match. Maya aliases include مایا and माया. Actual recognition remains browser/network dependent.

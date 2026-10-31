@@ -1,9 +1,9 @@
 import {VoiceBookingDialogue} from './voice-dialogue.js';
-import {wakeCommand,endsConversation} from './wake-word.js';
+import {wakeCommand,endsConversation,disablesHandsFree} from './wake-word.js';
 
 export class VoiceAssistant{
- constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree=()=>{},wakeWord=()=> 'Stella',continuousConversation=false,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
-  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree,wakeWord,continuousConversation,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.handsFreeEnabled=false;this.recognitionFailures=0;this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
+ constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree=()=>{},onWakeHeard=()=>{},wakeWord=()=> 'Maya',continuousConversation=false,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
+  Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree,onWakeHeard,wakeWord,continuousConversation,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.handsFreeEnabled=false;this.recognitionFailures=0;this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
  }
  abortRecognition(){clearTimeout(this.restartTimer);this.restartTimer=null;if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
  stopSpeech(){this.audioAbort?.abort();this.audioAbort=null;if(this.audio){this.audio.pause();this.audio=null;}if(this.audioUrl){URL.revokeObjectURL(this.audioUrl);this.audioUrl=null;}if(this.speechTimer)clearTimeout(this.speechTimer);this.finishSpeech?.();this.finishSpeech=null;this.speech?.cancel();}
@@ -15,7 +15,7 @@ export class VoiceAssistant{
   if(this.submitting){this.onStatus('AI ke jawab ka intezar karein ya Stop voice dabayein.');return;}
   if(!this.Recognition){this.onStatus('Hands-free speech recognition is browser mein available nahi. Chrome/Edge use karein.');return;}
   if(wakeCommand(this.wakeWord(),this.wakeWord())===null){this.onStatus('Assistant ka naam 2–30 letters/numbers mein rakhein.');return;}
-  this.stop();this.handsFreeEnabled=true;this.recognitionFailures=0;this.onHandsFree(true);this.listenForWake(this.turn);
+  this.stop(undefined,true);this.handsFreeEnabled=true;this.recognitionFailures=0;this.onHandsFree(true);this.listenForWake(this.turn);
  }
  sleep(){
   this.stop('Conversation pause. Naam lene par dobara shuru hogi.',true);
@@ -46,6 +46,8 @@ export class VoiceAssistant{
    if(turn!==this.turn||woke)return;
    for(let i=event.resultIndex||0;i<event.results.length;i++){
     if(event.results[i].isFinal===false)continue;
+    const raw=event.results[i][0].transcript;this.onWakeHeard(raw);
+    if(disablesHandsFree(raw)||disablesHandsFree(wakeCommand(raw,this.wakeWord())||'')){woke=true;this.stop('Hands-free off. Mic aur auto-booking band hain.');return;}
     const command=wakeCommand(event.results[i][0].transcript,this.wakeWord());
     if(command===null)continue;woke=true;this.recognitionFailures=0;this.abortRecognition();void this.wake(command).catch(()=>this.stop('Voice start nahi hui. Hands-free dobara enable karein.'));return;
    }
@@ -64,7 +66,7 @@ export class VoiceAssistant{
  }
  async preview(){
   if(this.submitting)return;this.stop();this.cloudUnavailable=false;const turn=++this.turn;
-  const name=String(this.wakeWord()||'Stella').slice(0,30);
+  const name=String(this.wakeWord()||'Maya').slice(0,30);
   const step={message:`Hi! Main ${name} hoon. Kaunsa PC book karna hai?`,speech:{ur:`ہائے! میں ${name} ہوں۔ کون سا پی سی بک کرنا ہے؟`,en:`Hi! I'm ${name}. Which PC would you like to book?`,hi:`हाय! मैं ${name} हूँ। कौन सा पीसी बुक करना है?`}};
   this.onMessage('assistant',step.message);this.onStatus('Voice sample chal raha hai…');
   try{await this.speak(step,turn);}catch{this.onStatus('Voice sample nahi chal saka. Browser ki sound permission check karein.');return;}
@@ -124,7 +126,7 @@ export class VoiceAssistant{
   if(!this.active||turn!==this.turn||this.submitting)return;
   this.abortRecognition();
   const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=false;recognition.interimResults=false;let heard=false;
-  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.recognitionFailures=0;this.abortRecognition();if(endsConversation(text)){this.onMessage('you',text);this.sleep();return;}this.onMessage('you',text);if(this.handleTranscript){void this.handleTranscript(text);return;}const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
+  recognition.onresult=e=>{if(turn!==this.turn||heard)return;heard=true;const text=e.results[0][0].transcript;this.recognitionFailures=0;this.abortRecognition();if(disablesHandsFree(text)||disablesHandsFree(wakeCommand(text,this.wakeWord())||'')){this.onMessage('you',text);this.stop('Hands-free off. Mic aur auto-booking band hain.');return;}if(endsConversation(text)){this.onMessage('you',text);this.sleep();return;}this.onMessage('you',text);if(this.handleTranscript){void this.handleTranscript(text);return;}const step=this.dialogue.receive(text);if(step?.action==='submit')void this.submit(step);else void this.present(step);};
   recognition.onerror=e=>{if(turn!==this.turn)return;heard=true;this.recognitionError(e.error,turn,'conversation');};
   recognition.onend=()=>{if(turn===this.turn&&!heard){this.recognition=null;if(this.continuousConversation||this.handsFreeEnabled){this.onStatus('Sun raha hoon…');this.queueListening(turn,'conversation');}else this.onStatus('Kuch suna nahi. Dobara suno button dabayein.');}};
   this.onStatus('Sun raha hoon…');try{recognition.start();}catch{this.recognitionError('start-failed',turn,'conversation');}
