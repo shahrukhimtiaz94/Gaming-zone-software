@@ -70,7 +70,7 @@ test('persistent 503 stops after one retry; quota/auth failures never retry',asy
 
 test('only active server auto-book context can execute a complete PC request; errors after booking report actual success',async()=>{
  let generations=0,automatic=0,manual=0;const booking={device:'PC 6',customer:'Ahmed',minutes:60,bill:300,sessionId:99};
- const agent=createAgent({generate:async body=>{assert.match(body.systemInstruction.parts[0].text,/SERVER OVERRIDE/);if(++generations===1)return call('prepare_action',{action:'request',device:6,customer:'Ahmed',minutes:60});throw Object.assign(Error('Provider unavailable'),{code:'AI_PROVIDER_UNAVAILABLE'});},execute:async()=>{manual++;}});
+ const agent=createAgent({generate:async body=>{assert.match(body.systemInstruction.parts[0].text,/SERVER OVERRIDE/);assert.match(body.systemInstruction.parts[0].text,/ask only for missing fields/);assert.match(body.tools[0].functionDeclarations.find(d=>d.name==='prepare_action').description,/Execute a PC booking immediately/);if(++generations===1)return call('prepare_action',{action:'request',device:6,customer:'Ahmed',minutes:60});throw Object.assign(Error('Provider unavailable'),{code:'AI_PROVIDER_UNAVAILABLE'});},execute:async()=>{manual++;}});
  const result=await agent({message:'PC 6 Ahmed ko 1 hour book karo',user:{id:1,role:'owner'},autoBook:async args=>{automatic++;assert.equal(args.device,6);return {executed:true,booking};}});
  assert.equal(automatic,1);assert.equal(manual,0);assert.deepEqual(result.executions,[booking]);assert.match(result.reply,/start ho gaya/);assert.equal(result.actions.length,0);
 });
