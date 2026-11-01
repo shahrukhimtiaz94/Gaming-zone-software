@@ -24,7 +24,7 @@ export class AIChatAssistant extends VoiceAssistant{
   this.grantTimer=setTimeout(async()=>{
    const grant=this.grant;if(!grant||!this.handsFreeEnabled)return;
    try{const updated=await this.handsFreeControl({mode:'renew',lease:grant.lease});if(this.grant===grant&&this.handsFreeEnabled){this.grant=updated;this.renewHandsFree();}}
-   catch{if(this.grant===grant)this.stop('Auto-booking permission renew nahi hui. Hands-free band hai; connection check karein.');}
+   catch(error){if(this.grant===grant)this.stop('Hands-free band: auto-booking permission renew nahi hui. '+(error.message||'Connection check karein.'));}
   },20000);
  }
  clear(){this.stop('Nayi AI conversation tayyar hai.');this.history=[];this.onActions([]);}

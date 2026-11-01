@@ -1,7 +1,7 @@
 const normalize=t=>String(t||'').normalize('NFKC').toLocaleLowerCase().replace(/\s+/g,' ').trim();
 export function wakeCommand(text,name='Maya'){
  const target=normalize(name);if(target.length<2||target.length>30||!/^[\p{L}\p{N} -]+$/u.test(target))return null;
- const known={maya:['maya','maia','my a','مایا','مایہ','مائیا','माया','माइया'],stella:['stella','سٹیلا','اسٹیلا','استیلا','سٹلا','سٹیلہ','स्टेला','स्टैला'],nexus:['nexus','نیکسس','نکسس','نیک سس','नेक्सस','नेकसस'],jarvis:['jarvis','جاروس','جارویس','जार्विस'],nexa:['nexa','نیکسا','नेक्सा','नेक्सा'],nova:['nova','نووا','नोवा']};
+ const known={ali:['ali','علی','अली'],maya:['maya','maia','my a','مایا','مایہ','مائیا','माया','माइया'],stella:['stella','سٹیلا','اسٹیلا','استیلا','سٹلا','سٹیلہ','स्टेला','स्टैला'],nexus:['nexus','نیکسس','نکسس','نیک سس','नेक्सस','नेकसस'],jarvis:['jarvis','جاروس','جارویس','जार्विस'],nexa:['nexa','نیکسا','नेक्सा','नेक्सा'],nova:['nova','نووا','नोवा']};
  const aliases=known[target]||[target];
  const speech=String(text||'').normalize('NFKC').replace(/\s+/g,' ').trim();
  for(const alias of aliases){

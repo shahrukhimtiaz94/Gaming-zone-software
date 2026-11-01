@@ -92,3 +92,24 @@ test('wake name uses English recognition independently of Urdu conversation and 
   await h.say('OK thanks');t.mock.timers.tick(650);assert.equal(h.assistant.recognition.lang,'en-US');await h.say('Maya');assert.equal(h.assistant.active,true);assert.equal(h.assistant.recognition.lang,'ur-PK');
  }finally{h.assistant.stop();}
 });
+
+test('stuck wake startup reconnects instead of staying ON without a listener; Stop cancels recovery',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const h=harness();const statuses=[];h.assistant.onStatus=text=>statuses.push(text);
+ try{
+  h.assistant.enableHandsFree();const stuck=h.assistant.recognition;t.mock.timers.tick(8000);assert.equal(stuck.aborted,true);assert.ok(statuses.some(s=>s.includes('wake-start-timeout')));
+  t.mock.timers.tick(1000);assert.notEqual(h.assistant.recognition,stuck);assert.equal(h.assistant.recognition.started,true);
+  h.assistant.stop();const count=h.microphones.length;t.mock.timers.tick(60000);assert.equal(h.microphones.length,count);assert.equal(h.assistant.recognition,null);
+ }finally{h.assistant.stop();}
+});
+test('wake speech with no result is recovered and reports audio progress; Ali wakes in Urdu too',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const h=harness();const statuses=[];h.assistant.onStatus=text=>statuses.push(text);h.assistant.wakeWord=()=> 'Ali';
+ try{
+  h.assistant.enableHandsFree();const stuck=h.assistant.recognition;stuck.onstart();stuck.onaudiostart();stuck.onspeechstart();stuck.onspeechend();assert.ok(statuses.some(s=>s.includes('Mic audio ON')));
+  t.mock.timers.tick(6000);assert.equal(stuck.aborted,true);assert.ok(statuses.some(s=>s.includes('wake-result-timeout')));t.mock.timers.tick(1000);await h.say('علی');assert.equal(h.assistant.active,true);
+ }finally{h.assistant.stop();}
+});
+test('wake watchdog stops after bounded repeated startup failures',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const h=harness();
+ try{h.assistant.enableHandsFree();for(let i=1;i<=3;i++){t.mock.timers.tick(8000);if(i<3)t.mock.timers.tick(1000*i);}assert.equal(h.assistant.handsFreeEnabled,false);assert.equal(h.assistant.recognition,null);const count=h.microphones.length;t.mock.timers.tick(60000);assert.equal(h.microphones.length,count);}
+ finally{h.assistant.stop();}
+});

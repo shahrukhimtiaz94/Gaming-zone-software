@@ -5,7 +5,7 @@ export class VoiceAssistant{
  constructor({getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree=()=>{},onWakeHeard=()=>{},wakeWord=()=> 'Maya',continuousConversation=false,synthesize=null,AudioClass=globalThis.Audio,language=()=> 'en-PK',voiceName=()=>'',speech=globalThis.speechSynthesis,Recognition=globalThis.SpeechRecognition||globalThis.webkitSpeechRecognition,Utterance=globalThis.SpeechSynthesisUtterance}){
   Object.assign(this,{getDevices,createRequest,onFields,onMessage,onStatus,onSubmitting,onHandsFree,onWakeHeard,wakeWord,continuousConversation,synthesize,AudioClass,language,voiceName,speech,Recognition,Utterance});this.handsFreeEnabled=false;this.recognitionFailures=0;this.recognition=null;this.turn=0;this.active=false;this.submitting=false;
  }
- abortRecognition(){clearTimeout(this.restartTimer);this.restartTimer=null;if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
+ abortRecognition(){clearTimeout(this.wakeWatchdog);this.wakeWatchdog=null;clearTimeout(this.restartTimer);this.restartTimer=null;if(this.recognition){this.recognition.onend=null;this.recognition.onerror=null;this.recognition.onresult=null;this.recognition.onstart=null;this.recognition.onaudiostart=null;this.recognition.onspeechstart=null;this.recognition.onspeechend=null;try{this.recognition.abort();}catch{}this.recognition=null;}}
  stopSpeech(){this.audioAbort?.abort();this.audioAbort=null;if(this.audio){this.audio.pause();this.audio=null;}if(this.audioUrl){URL.revokeObjectURL(this.audioUrl);this.audioUrl=null;}if(this.speechTimer)clearTimeout(this.speechTimer);this.finishSpeech?.();this.finishSpeech=null;this.speech?.cancel();}
  stop(message='Voice band hai. Nayi request ke liye Talk to assistant dabayein.',preserveHandsFree=false){
   if(!preserveHandsFree){this.handsFreeEnabled=false;this.onHandsFree(false);}
@@ -35,17 +35,18 @@ export class VoiceAssistant{
    this.stop('Microphone permission/device/language check karein. Hands-free band hai; theek karne ke baad dobara enable karein.');return;
   }
   if(error==='no-speech'){this.onStatus(mode==='wake'?`Naam ka intezar: ${this.wakeWord()}`:'Sun raha hoon…');if(mode==='wake'||this.continuousConversation||this.handsFreeEnabled)this.queueListening(turn,mode);return;}
-  if(++this.recognitionFailures>=3){this.stop('Voice service baar baar fail hui. Connection check karke hands-free dobara enable karein.');return;}
-  this.onStatus('Voice service reconnect ho rahi hai…');
+  if(++this.recognitionFailures>=3){this.stop(`Voice service baar baar fail hui (${error}). Chrome/Edge aur mic connection check karke hands-free dobara enable karein.`);return;}
+  this.onStatus(`Voice service reconnect ho rahi hai… (${error})`);
   if(mode==='wake'||this.continuousConversation||this.handsFreeEnabled)this.queueListening(turn,mode,1000*this.recognitionFailures);
  }
  listenForWake(turn){
   if(turn!==this.turn||!this.handsFreeEnabled||this.active||this.submitting)return;
   this.abortRecognition();const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=/^[a-z0-9 -]+$/i.test(this.wakeWord())?'en-US':this.language();recognition.continuous=false;recognition.interimResults=true;recognition.maxAlternatives=5;let woke=false;
+  const watch=(delay,error)=>{clearTimeout(this.wakeWatchdog);this.wakeWatchdog=setTimeout(()=>{if(turn!==this.turn||this.recognition!==recognition||woke)return;woke=true;this.recognitionError(error,turn,'wake');},delay);};
   recognition.onresult=event=>{
    if(turn!==this.turn||woke)return;
    for(let i=event.resultIndex||0;i<event.results.length;i++){
-    const result=event.results[i],raw=result[0]?.transcript||'';this.onWakeHeard(raw);
+    const result=event.results[i],raw=result[0]?.transcript||'';this.recognitionFailures=0;watch(45000,'wake-idle-timeout');this.onWakeHeard(raw);
     if(disablesHandsFree(raw)||disablesHandsFree(wakeCommand(raw,this.wakeWord())||'')){if(result.isFinal===false)continue;woke=true;this.stop('Hands-free off. Mic aur auto-booking band hain.');return;}
     for(let alternative=0;alternative<result.length;alternative++){
      const command=wakeCommand(result[alternative].transcript,this.wakeWord());
@@ -56,9 +57,13 @@ export class VoiceAssistant{
    }
   };
   recognition.onerror=event=>{woke=true;this.recognitionError(event.error,turn,'wake');};
-  recognition.onend=()=>{if(turn===this.turn&&!woke){this.recognition=null;this.queueListening(turn,'wake');}};
-  recognition.onstart=()=>{if(turn===this.turn&&!woke)this.onStatus(`Mic sun raha hai. "${this.wakeWord()}" bolein, phir command dein.`);};
+  recognition.onend=()=>{if(turn===this.turn&&!woke){clearTimeout(this.wakeWatchdog);this.wakeWatchdog=null;this.recognition=null;this.queueListening(turn,'wake');}};
+  recognition.onstart=()=>{if(turn===this.turn&&!woke){watch(45000,'wake-idle-timeout');this.onStatus(`Wake listener connected. "${this.wakeWord()}" bolein.`);}};
+  recognition.onaudiostart=()=>{if(turn===this.turn&&!woke)this.onStatus(`Mic audio ON. "${this.wakeWord()}" bolein.`);};
+  recognition.onspeechstart=()=>{if(turn===this.turn&&!woke){watch(15000,'wake-result-timeout');this.onStatus('Awaaz mili. Naam pehchana ja raha hai…');}};
+  recognition.onspeechend=()=>{if(turn===this.turn&&!woke)watch(6000,'wake-result-timeout');};
   this.onStatus(`Wake mic connect ho raha hai. "${this.wakeWord()}" ka naam lein.`);
+  watch(8000,'wake-start-timeout');
   try{recognition.start();}catch{this.recognitionError('start-failed',turn,'wake');}
  }
  async wake(command){
