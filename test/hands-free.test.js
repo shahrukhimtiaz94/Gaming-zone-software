@@ -62,3 +62,23 @@ test('late server enable after local off cannot turn auto-booking back on',async
  try{const pending=h.assistant.enableHandsFree();h.assistant.stop();resolve({lease:'b'.repeat(48),expires:Date.now()+60000});await pending;await flush();assert.equal(h.assistant.handsFreeEnabled,false);assert.equal(h.assistant.grant,null);assert.equal(h.assistant.recognition,null);assert.deepEqual(modes,['enable','disable']);}
  finally{h.assistant.stop();}
 });
+
+test('dashboard hands-free enable greets and opens conversation after server grant without Talk button',async()=>{
+ const h=harness();h.assistant.handsFreeControl=async()=>({lease:'c'.repeat(48),expires:Date.now()+60000});
+ try{await h.assistant.enableHandsFree();assert.equal(h.assistant.handsFreeEnabled,true);assert.equal(h.assistant.active,true);assert.ok(h.assistant.recognition?.started);assert.equal(h.assistant.recognition.continuous,false);await h.say('PC five Ahmed ke liye one hour');assert.equal(h.calls.length,1);assert.equal(h.calls[0].handsFreeLease,'c'.repeat(48));}
+ finally{h.assistant.stop();}
+});
+test('name alone wakes from a partial result and an alternative transcript wakes after OK thanks',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const h=harness();
+ try{
+  h.assistant.enableHandsFree();assert.equal(h.assistant.recognition.interimResults,true);
+  h.assistant.recognition.onresult({resultIndex:0,results:[Object.assign([{transcript:'مایا'}],{isFinal:false})]});await flush();assert.equal(h.assistant.active,true);assert.equal(h.calls.length,0);
+  await h.say('OK thanks');t.mock.timers.tick(650);
+  h.assistant.recognition.onresult({resultIndex:0,results:[Object.assign([{transcript:'my'},{transcript:'Maya'}],{isFinal:true})]});await flush();assert.equal(h.assistant.active,true);assert.equal(h.calls.length,0);
+ }finally{h.assistant.stop();}
+});
+test('partial booking and unrelated partial speech never reach the model',async()=>{
+ const h=harness();try{
+  h.assistant.enableHandsFree();for(const text of ['PC five two hours','Maya PC five book'])h.assistant.recognition.onresult({resultIndex:0,results:[Object.assign([{transcript:text}],{isFinal:false})]});await flush();assert.equal(h.assistant.active,false);assert.equal(h.calls.length,0);
+ }finally{h.assistant.stop();}
+});

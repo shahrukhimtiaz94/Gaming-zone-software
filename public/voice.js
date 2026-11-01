@@ -41,15 +41,18 @@ export class VoiceAssistant{
  }
  listenForWake(turn){
   if(turn!==this.turn||!this.handsFreeEnabled||this.active||this.submitting)return;
-  this.abortRecognition();const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=true;recognition.interimResults=false;let woke=false;
+  this.abortRecognition();const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=5;let woke=false;
   recognition.onresult=event=>{
    if(turn!==this.turn||woke)return;
    for(let i=event.resultIndex||0;i<event.results.length;i++){
-    if(event.results[i].isFinal===false)continue;
-    const raw=event.results[i][0].transcript;this.onWakeHeard(raw);
-    if(disablesHandsFree(raw)||disablesHandsFree(wakeCommand(raw,this.wakeWord())||'')){woke=true;this.stop('Hands-free off. Mic aur auto-booking band hain.');return;}
-    const command=wakeCommand(event.results[i][0].transcript,this.wakeWord());
-    if(command===null)continue;woke=true;this.recognitionFailures=0;this.abortRecognition();void this.wake(command).catch(()=>this.stop('Voice start nahi hui. Hands-free dobara enable karein.'));return;
+    const result=event.results[i],raw=result[0]?.transcript||'';this.onWakeHeard(raw);
+    if(disablesHandsFree(raw)||disablesHandsFree(wakeCommand(raw,this.wakeWord())||'')){if(result.isFinal===false)continue;woke=true;this.stop('Hands-free off. Mic aur auto-booking band hain.');return;}
+    for(let alternative=0;alternative<result.length;alternative++){
+     const command=wakeCommand(result[alternative].transcript,this.wakeWord());
+     // Only a name alone can wake on partial speech. Never execute a partial command.
+     if(command===null||result.isFinal===false&&command!=='')continue;
+     woke=true;this.recognitionFailures=0;this.abortRecognition();void this.wake(command).catch(()=>this.stop('Voice start nahi hui. Hands-free dobara enable karein.'));return;
+    }
    }
   };
   recognition.onerror=event=>{woke=true;this.recognitionError(event.error,turn,'wake');};
