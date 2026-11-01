@@ -27,13 +27,13 @@ test('OK thanks is the stop phrase and normal sentences do not end conversation'
 test('hands-free ignores ambient words, wakes by name, keeps talking and returns to wake mode on OK thanks',async t=>{
  t.mock.timers.enable({apis:['setTimeout']});const h=harness();
  try{
-  h.assistant.enableHandsFree();assert.equal(h.assistant.handsFreeEnabled,true);assert.equal(h.assistant.recognition.continuous,true);
+  h.assistant.enableHandsFree();assert.equal(h.assistant.handsFreeEnabled,true);assert.equal(h.assistant.recognition.continuous,false);
   await h.say('PC five two hours');assert.equal(h.calls.length,0);assert.equal(h.messages.length,0,'Ambient speech must not be sent to model or chat log');
   await h.say('Maya aaj ki earning batao');assert.equal(h.calls.length,1);assert.equal(h.calls[0].message,'aaj ki earning batao');assert.equal(h.assistant.active,true);
   await h.say('PC five ka status bhi batao');assert.equal(h.calls.length,2);assert.ok(h.assistant.recognition);
   const before=h.microphones.length;h.assistant.recognition.onend();t.mock.timers.tick(650);assert.equal(h.microphones.length,before+1,'Silence must re-arm conversation without another click');
   await h.say('OK thanks');assert.equal(h.calls.length,2,'Stop phrase must not consume AI quota');assert.equal(h.assistant.active,false);assert.equal(h.assistant.handsFreeEnabled,true);
-  t.mock.timers.tick(650);assert.equal(h.assistant.recognition.continuous,true);
+  t.mock.timers.tick(650);assert.equal(h.assistant.recognition.continuous,false);
   await h.say('Maya');assert.equal(h.assistant.active,true);assert.equal(h.calls.length,2,'Name alone greets without a model request');
   h.assistant.stop();t.mock.timers.tick(5000);assert.equal(h.assistant.recognition,null);assert.equal(h.assistant.handsFreeEnabled,false);
  }finally{h.assistant.stop();}
@@ -80,5 +80,15 @@ test('name alone wakes from a partial result and an alternative transcript wakes
 test('partial booking and unrelated partial speech never reach the model',async()=>{
  const h=harness();try{
   h.assistant.enableHandsFree();for(const text of ['PC five two hours','Maya PC five book'])h.assistant.recognition.onresult({resultIndex:0,results:[Object.assign([{transcript:text}],{isFinal:false})]});await flush();assert.equal(h.assistant.active,false);assert.equal(h.calls.length,0);
+ }finally{h.assistant.stop();}
+});
+
+test('wake name uses English recognition independently of Urdu conversation and restarts after silent end',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const h=harness();h.assistant.language=()=> 'ur-PK';
+ try{
+  h.assistant.enableHandsFree();assert.equal(h.assistant.recognition.lang,'en-US');assert.equal(h.assistant.recognition.continuous,false);
+  const idle=h.assistant.recognition;idle.onend();t.mock.timers.tick(650);assert.notEqual(h.assistant.recognition,idle);
+  await h.say('Maya');assert.equal(h.assistant.active,true);assert.equal(h.assistant.recognition.lang,'ur-PK');
+  await h.say('OK thanks');t.mock.timers.tick(650);assert.equal(h.assistant.recognition.lang,'en-US');await h.say('Maya');assert.equal(h.assistant.active,true);assert.equal(h.assistant.recognition.lang,'ur-PK');
  }finally{h.assistant.stop();}
 });

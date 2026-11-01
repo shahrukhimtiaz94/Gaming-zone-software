@@ -41,7 +41,7 @@ export class VoiceAssistant{
  }
  listenForWake(turn){
   if(turn!==this.turn||!this.handsFreeEnabled||this.active||this.submitting)return;
-  this.abortRecognition();const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=this.language();recognition.continuous=true;recognition.interimResults=true;recognition.maxAlternatives=5;let woke=false;
+  this.abortRecognition();const recognition=new this.Recognition();this.recognition=recognition;recognition.lang=/^[a-z0-9 -]+$/i.test(this.wakeWord())?'en-US':this.language();recognition.continuous=false;recognition.interimResults=true;recognition.maxAlternatives=5;let woke=false;
   recognition.onresult=event=>{
    if(turn!==this.turn||woke)return;
    for(let i=event.resultIndex||0;i<event.results.length;i++){
@@ -57,7 +57,8 @@ export class VoiceAssistant{
   };
   recognition.onerror=event=>{woke=true;this.recognitionError(event.error,turn,'wake');};
   recognition.onend=()=>{if(turn===this.turn&&!woke){this.recognition=null;this.queueListening(turn,'wake');}};
-  this.onStatus(`Hands-free on. "${this.wakeWord()}" ka naam lein.`);
+  recognition.onstart=()=>{if(turn===this.turn&&!woke)this.onStatus(`Mic sun raha hai. "${this.wakeWord()}" bolein, phir command dein.`);};
+  this.onStatus(`Wake mic connect ho raha hai. "${this.wakeWord()}" ka naam lein.`);
   try{recognition.start();}catch{this.recognitionError('start-failed',turn,'wake');}
  }
  async wake(command){
